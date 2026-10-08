@@ -6,11 +6,7 @@ const promptAttribute = 'data-nora-anonymous-prompt'
 const unpaddedAttribute = 'data-nora-anonymous-unpadded'
 const SCAN_DELAY_MS = 250
 
-/**
- * The style half of the mode. Every selector gets a rule of its own: a selector
- * list is thrown away whole when one entry in it does not parse. Empty for a site
- * with no rules, so nothing is injected on pages the mode has nothing to say about.
- */
+/** The style half of the mode. One rule per selector, since a list is dropped whole when one entry does not parse. */
 export function getAnonymousCss(host: string, enabled: boolean, rules: AnonymousRule[] = anonymousRules) {
   if (!enabled) {
     return ''
@@ -24,24 +20,15 @@ export function getAnonymousCss(host: string, enabled: boolean, rules: Anonymous
   return [
     ...hidden,
     `[${hiddenAttribute}] { display: none !important; }`,
-    // The room a hidden bar had been given at the top.
     `[${unpaddedAttribute}] { padding-top: 0 !important; }`,
-    // A sheet that locked the page's scrolling leaves it locked once it is hidden.
-    // Only while one has been hidden, so a lock the site sets for its own reasons
-    // is not undone on pages that never showed a prompt.
-    // The page scrolls, not the body: `overflow: auto` on the body would make it a scroll
-    // container of its own wherever its height is fixed, and the page would stop moving.
+    // Only while a prompt is hidden, so a lock the site sets itself is left alone.
+    // On html, not body: `overflow: auto` on a fixed-height body makes it a scroll container and the page stops moving.
     `html[${promptAttribute}] { overflow: auto !important; }`,
     `html[${promptAttribute}] body { overflow: visible !important; }`,
   ].join('\n')
 }
 
-/**
- * The container to hide for a prompt that was recognised by its contents: the
- * outermost fixed or sticky ancestor, or the element itself. Null when the match
- * does not sit in anything floating, which means it is part of the page and not a
- * prompt over it.
- */
+/** The outermost fixed or sticky ancestor of a match; null when it sits in nothing floating, i.e. is part of the page. */
 export function findOverlayTarget<T extends { parentElement: T | null; tagName: string }>(
   match: T,
   isFloating: (element: T) => boolean,
@@ -57,12 +44,7 @@ export function findOverlayTarget<T extends { parentElement: T | null; tagName: 
 
 const PORTAL_TEXT_MARGIN = 200
 
-/**
- * The container directly under the body that a prompt is mounted in, for prompts
- * that are not fixed themselves. Null when that container holds more than the
- * prompt and a little text around it: then it is the app, and hiding it would
- * hide the page.
- */
+/** The container under the body that a non-fixed prompt is mounted in; null when it holds much besides the prompt (the app itself). */
 export function findPortalTarget<T extends { parentElement: T | null; tagName: string }>(
   match: T,
   textLength: (element: T) => number,
@@ -77,17 +59,12 @@ export function findPortalTarget<T extends { parentElement: T | null; tagName: s
   return textLength(top) <= textLength(match) + PORTAL_TEXT_MARGIN ? top : null
 }
 
-/**
- * A bar pinned to the top leaves a gap under it, because the page makes room for it with padding
- * on a container of its own. Once the bar is hidden that padding is the gap, so the ancestor of
- * what is now at the top whose padding is closest to the bar's height is the one to give it back.
- * Null when no container is padded by about that much.
- */
+/** The ancestor whose padding-top best matches a hidden top bar's height: the room the page made for it. Null if none is close. */
 export function findPaddedAncestor<T extends { parentElement: T | null; tagName: string }>(
   start: T | null,
   barHeight: number,
   paddingTopOf: (element: T) => number,
-  // A page rounds the room it makes to its own scale and the bar can carry a border, so the two differ by a little.
+  // The bar can carry a border and the page rounds its own scale (seen 64 vs 60).
   tolerance = 8,
 ) {
   if (barHeight <= 0) {
@@ -98,7 +75,7 @@ export function findPaddedAncestor<T extends { parentElement: T | null; tagName:
   for (let node = start; node && node.tagName !== 'BODY' && node.tagName !== 'HTML'; node = node.parentElement) {
     const padding = paddingTopOf(node)
     const distance = Math.abs(padding - barHeight)
-    // Ties go to the outer one, which is where a page puts the room for a bar.
+    // Ties go to the outer one.
     if (padding > 0 && distance <= tolerance && distance <= bestDistance) {
       best = node
       bestDistance = distance
@@ -107,7 +84,7 @@ export function findPaddedAncestor<T extends { parentElement: T | null; tagName:
   return best
 }
 
-/** The most text a prompt's container may hold: more than that is the page, and is not hidden. */
+/** More text than this in a container means it is the page, not a prompt. */
 export const OVERLAY_MAX_TEXT = 800
 
 const isFloating = (element: Element) => {
@@ -117,7 +94,7 @@ const isFloating = (element: Element) => {
 
 const isModeOn = () => Boolean(window.Nora?.getSettings?.().anonymousMode)
 
-/** What was hidden for a match, so that it can be given back when the match goes. */
+/** What was hidden for a match, kept to give back when the match goes. */
 interface Handled {
   selector: string
   target: Element
@@ -126,11 +103,7 @@ interface Handled {
   barHeight: number
 }
 
-/**
- * The script half of the mode, for prompts that can only be found by what is in
- * them. It scans a little after the page changes rather than on every change,
- * and a failing selector is skipped without stopping the others.
- */
+/** The script half of the mode, for prompts found only by their contents. Debounced; a failing selector is skipped. */
 export function initAnonymousMode() {
   const { hostname } = document.location
   if (!getAnonymousRules(hostname).some((rule) => rule.overlays?.length || rule.portals?.length || rule.dismiss?.length)) {
@@ -138,7 +111,7 @@ export function initAnonymousMode() {
   }
 
   const handled = new Map<Element, Handled>()
-  // Matches that were looked at and are not prompts, so that they are not looked at again.
+  // Matches already judged not to be prompts.
   const rejected = new WeakSet<Element>()
   let timer: ReturnType<typeof setTimeout> | undefined
 
@@ -163,8 +136,7 @@ export function initAnonymousMode() {
     }
   }
 
-  // The room a page made for a bar at the top is looked for again while the bar is hidden, since a
-  // page that redraws its container brings the padding back.
+  // Re-checked on every scan: a page that redraws its container brings the padding back.
   const giveBackRoom = (entry: Handled) => {
     if (entry.barHeight <= 0 || (entry.unpadded?.isConnected && entry.unpadded.hasAttribute(unpaddedAttribute))) {
       return
@@ -185,7 +157,7 @@ export function initAnonymousMode() {
       return
     }
 
-    // What was hidden for a prompt that has gone is given back, whatever else shares its container.
+    // Give back what was hidden for a prompt that has gone.
     for (const [match, entry] of handled) {
       if (!stillMatches(match, entry.selector)) {
         release(entry)
@@ -213,8 +185,7 @@ export function initAnonymousMode() {
             handled.set(match, { selector, target, locksScroll: rule.locksScroll, barHeight: top <= 1 ? height : 0 })
           }
         } catch {
-          // A selector this engine does not understand, or a page in a state it cannot be
-          // queried in. The rest of the rules still run.
+          // Unsupported selector or unqueryable page: the other rules still run.
         }
       }
     }
@@ -225,7 +196,7 @@ export function initAnonymousMode() {
         const target = findOverlayTarget(match, isFloating)
         return target && (target.textContent?.length ?? 0) <= OVERLAY_MAX_TEXT ? target : null
       })
-      // Clicked, not hidden: the page's own code is what must stop blocking the scroll.
+      // Clicked, not hidden: the page's own code must stop blocking the scroll.
       hide({ selectors: rule.dismiss || [], locksScroll }, (match) => {
         ;(match as HTMLElement).click()
         return match
@@ -247,13 +218,13 @@ export function initAnonymousMode() {
   }
 
   const schedule = () => {
-    // Pages of other profiles change all the time and have nothing to do here.
+    // Pages of other profiles have nothing to do here.
     if (timer === undefined && (isModeOn() || handled.size)) {
       timer = setTimeout(scan, SCAN_DELAY_MS)
     }
   }
 
-  // A change of the setting is always looked at: it is what turns the mode on or off.
+  // Always scanned: the setting is what turns the mode on or off.
   window.addEventListener(noraSettingsEvent, () => {
     if (timer === undefined) {
       timer = setTimeout(scan, SCAN_DELAY_MS)

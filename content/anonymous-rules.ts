@@ -1,53 +1,23 @@
 import { isBlocklistExcludedHost } from '../lib/blocklist/policy'
 
 /**
- * What the anonymous mode removes, per site. Sites change their markup often, so
- * this is plain data that is cheap to amend, and nothing in it can take a page
- * down: every selector is applied on its own, and one that stops matching or
- * stops parsing only loses itself.
- *
- * Only prompts that get in the way of reading public content belong here --
- * sign-in and sign-up walls, and "open in the app" sheets. Nothing that hides a
- * captcha or a bot check, and nothing that fetches what the site withholds.
- *
- * Each rule says when and how it was last seen working. A selector that was not
- * seen on a real page does not go in.
+ * What the anonymous mode removes, per site. Plain data, so it is cheap to amend: each selector is
+ * applied on its own, and one that stops matching or parsing only loses itself.
+ * Only prompts that block reading public content belong here, never a captcha or a bot check.
+ * Each rule notes when it was seen working; a selector not seen on a real page does not go in.
  */
 export interface AnonymousRule {
   /** Hosts the rule applies to, with their subdomains. */
   hosts: string[]
-  /**
-   * Hidden outright with CSS. For prompts with a stable hook of their own; one
-   * rule per selector.
-   */
+  /** Hidden outright with CSS, one rule per selector. */
   hide?: string[]
-  /**
-   * Recognise a prompt by what is inside it. The page is searched for these, and
-   * the whole fixed-position container around a match -- backdrop and close button
-   * included -- is hidden, since the markup around it is usually hashed class names
-   * that change. A match that is not in a fixed or sticky container is left alone.
-   */
+  /** Found by what is inside: the outermost fixed or sticky container around a match is hidden. */
   overlays?: string[]
-  /**
-   * For a prompt that is not fixed itself but is mounted in a container of its own
-   * directly under the body, next to its backdrop. The match is found the same way,
-   * and that container is hidden -- but only if it holds little beyond the prompt,
-   * so a prompt rendered inside the app can never take the whole page with it.
-   */
+  /** Like `overlays`, for a prompt mounted directly under the body; skipped if that holds much besides it. */
   portals?: string[]
-  /**
-   * The prompt's own close button, clicked once when it shows up. For prompts built
-   * with a dialog library that keeps blocking wheel and touch scrolling for as long
-   * as its state says the dialog is open, however it is hidden: only closing it the
-   * way the site expects lifts that. Pair it with `hide`, which covers the moments
-   * before the click and a close button that stops being found.
-   */
+  /** The prompt's own close button, clicked once. For dialogs that keep cancelling scroll while "open". */
   dismiss?: string[]
-  /**
-   * The prompt locks the page's own scrolling, and gives it back only if it is lifted by hand. Set
-   * for the rules that were seen doing so, and for no others: a lock a site sets for its own
-   * reasons, such as one under an open photo, is not to be undone.
-   */
+  /** The prompt locks the page's scrolling; set only for rules seen doing so. */
   locksScroll?: boolean
 }
 
@@ -59,8 +29,7 @@ export const anonymousRules: AnonymousRule[] = [
       // "Get the full app experience" sheet and its backdrop.
       '[data-interaction="app-store-obstruction"]',
     ],
-    // Hiding it is not enough here: while the sheet counts as open, the page cancels
-    // every wheel and touch scroll. Seen 2026-10-08, same page.
+    // Hiding is not enough: while the sheet counts as open, the page cancels every scroll.
     dismiss: ['[data-interaction="app-store-obstruction"] button[aria-label="Dismiss"]'],
   },
   {
@@ -74,29 +43,24 @@ export const anonymousRules: AnonymousRule[] = [
     // Seen 2026-10-08 on a logged-out public profile, mobile layout: "See full
     // profile in the app".
     hosts: ['instagram.com'],
-    // On an embed page, the row under the video that says "View more on Instagram": it leads to the
-    // profile, which is a page that asks for the app. Seen 2026-10-09; the embed pages keep readable
-    // class names, so this is no guess at a hashed one and matches nothing on the site itself.
+    // Embed pages only (readable class names): the "View more on Instagram" row, which leads to a page asking for the app. Seen 2026-10-09.
     hide: ['.PrimaryCTA'],
     overlays: [
       'div[role="dialog"]:has(a[href^="intent://"])',
-      // The bar pinned to the top, with "Log in" and "Open app": the one header that holds both.
+      // The top bar with "Log in" and "Open app".
       'header:has(a[href^="/accounts/login"]):has(a[href^="intent://"])',
     ],
   },
   {
-    // Seen 2026-10-08 on a logged-out public profile, mobile layout. The sheet has
-    // no link or other stable hook, so it is told apart by being a modal made of
-    // nothing but text and buttons.
+    // Seen 2026-10-08, logged-out profile, mobile. No stable hook: told apart as a modal of only text and buttons.
     hosts: ['threads.com'],
-    // Left alone: anything with media, a link, a field, a frame (where a check lives), a form or an alert.
+    // Not dialogs with media, links, fields, frames (a check), forms or alerts.
     portals: [
       'div[role="dialog"][aria-modal="true"]:not(:has(img, video, a, input, textarea, iframe, canvas, form, [role="alertdialog"]))',
     ],
   },
   {
-    // Seen 2026-10-08 on a logged-out blog, mobile layout: the bar pinned to the
-    // bottom. Found by its buttons' labels, so English only.
+    // Seen 2026-10-08, logged-out blog, mobile: the bottom bar, found by its button label (English only).
     hosts: ['tumblr.com'],
     overlays: ['button[aria-label="Sign up"]'],
   },
