@@ -440,13 +440,13 @@
     "resume": "Resume"
   },
   "morePosts": {
-    "title": "More public posts",
+    "title": "More posts via search",
     "loading": "Looking for more posts…",
     "more": "Show more",
     "openSearch": "Open the search",
     "openPost": "Open post",
     "note": "Found through DuckDuckGo search, so some posts may be missing. The newest posts are the ones shown above.",
-    "challenge": "DuckDuckGo wants to check that you are a person. Open the search to continue there.",
+    "challenge": "DuckDuckGo wants to check that you are a person. Open the search, pass the check there, and the posts will be added here.",
     "error": "Could not load more posts.",
     "empty": "No more posts were found."
   },

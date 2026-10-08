@@ -152,6 +152,23 @@ const countWithIcon = (icon: keyof typeof ICON_PATHS, count: string) => {
   return item
 }
 
+/**
+ * What tells the two lists apart: the posts above are the profile's own, the ones below are what
+ * a search found. A thin line each side of a small label, the way Instagram marks a change of
+ * section, so it reads as part of the page and not as something added to it.
+ */
+const createDivider = (label: string) => {
+  const divider = create('div', 'display:flex;align-items:center;gap:12px;padding:20px 16px 12px;')
+  divider.setAttribute('data-more-divider', '1')
+  const line = () => create('div', `flex:1;height:1px;background:${DIVIDER};`)
+  divider.appendChild(line())
+  divider.appendChild(
+    create('div', `font-size:12px;font-weight:600;letter-spacing:0.6px;text-transform:uppercase;opacity:${MUTED_OPACITY};`, label),
+  )
+  divider.appendChild(line())
+  return divider
+}
+
 const formatDate = (date: number) =>
   new Date(date).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' })
 
@@ -254,14 +271,8 @@ export function initMorePosts() {
     const { block } = current
     block.querySelector('[data-more-status]')?.remove()
     block.querySelector('[data-more-button]')?.remove()
-    if (!block.querySelector('[data-more-title]')) {
-      const title = create(
-        'div',
-        `padding:16px 16px 8px;text-align:center;font-size:12px;font-weight:600;letter-spacing:0.6px;text-transform:uppercase;opacity:${MUTED_OPACITY};`,
-        payload.labels.title,
-      )
-      title.setAttribute('data-more-title', '1')
-      block.insertBefore(title, block.firstChild)
+    if (!block.querySelector('[data-more-divider]')) {
+      block.insertBefore(createDivider(payload.labels.title), block.firstChild)
     }
 
     if (payload.status === 'challenge') {
@@ -328,7 +339,8 @@ export function initMorePosts() {
       },
       { rootMargin: '400px' },
     )
-    const block = create('div', `margin-top:4px;border-top:1px solid ${DIVIDER};`)
+    // Straight under the grid, so the list carries on from it.
+    const block = create('div', 'margin:0;padding:0;')
     block.id = blockId
     found.gate.setAttribute(hiddenAttribute, '1')
     found.gate.style.setProperty('display', 'none', 'important')
