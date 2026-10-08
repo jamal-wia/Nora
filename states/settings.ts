@@ -12,6 +12,7 @@ import {
   getFaviconUrl,
   isValidSearchTemplate,
 } from '@/lib/search'
+import { DEFAULT_PUBLIC_SEARCH_SERVICE_ID, normalizePublicSearchServiceId } from '@/lib/public-search'
 
 export interface Profile {
   id: string
@@ -83,6 +84,7 @@ export interface Settings {
   disabledServicesArr: string[]
   enabledSearchProviderIds: string[]
   selectedSearchProviderId: string
+  selectedPublicSearchServiceId: string
   customSearchProviders: CustomSearchProvider[]
   profiles: Profile[]
 }
@@ -92,6 +94,7 @@ interface Store extends Settings {
   toggleService: (service: string) => void
   toggleSearchProvider: (providerId: string) => void
   setSelectedSearchProvider: (providerId: string) => void
+  setSelectedPublicSearchService: (serviceId: string) => void
   addCustomSearchProvider: (name: string, templateUrl: string) => string | null
   updateCustomSearchProvider: (id: string, name: string, templateUrl: string) => void
   deleteCustomSearchProvider: (id: string) => void
@@ -185,6 +188,7 @@ export const getSettingsSnapshot = (value: Partial<Store> | undefined = settings
     disabledServicesArr: (value?.disabledServicesArr || []).filter((service): service is string => typeof service === 'string'),
     enabledSearchProviderIds,
     selectedSearchProviderId: normalizeSelectedSearchProviderId(value?.selectedSearchProviderId, enabledSearchProviderIds),
+    selectedPublicSearchServiceId: normalizePublicSearchServiceId(value?.selectedPublicSearchServiceId),
     customSearchProviders,
     profiles: sanitizeProfiles(value?.profiles),
   }
@@ -207,6 +211,7 @@ export const normalizeSettings = <T extends Partial<Settings> | undefined>(data:
     data.selectedSearchProviderId,
     data.enabledSearchProviderIds,
   )
+  data.selectedPublicSearchServiceId = normalizePublicSearchServiceId(data.selectedPublicSearchServiceId)
   if (typeof data.videoEdgeLongPressTo2x !== 'boolean') {
     data.videoEdgeLongPressTo2x = true
   }
@@ -321,8 +326,9 @@ export const settings$: Observable<Store> = observable<Store>({
   siteZoom: {},
 
   disabledServicesArr: [],
-  enabledSearchProviderIds: ['url', 'duckduckgo', 'google'],
+  enabledSearchProviderIds: ['url', 'duckduckgo', 'public-search', 'google'],
   selectedSearchProviderId: 'url',
+  selectedPublicSearchServiceId: DEFAULT_PUBLIC_SEARCH_SERVICE_ID,
   customSearchProviders: [],
   profiles: [DEFAULT_PROFILE],
   setLanguage: (language) => {
@@ -366,6 +372,9 @@ export const settings$: Observable<Store> = observable<Store>({
   setSelectedSearchProvider: (providerId) => {
     const enabledIds = settings$.enabledSearchProviderIds.get()
     settings$.selectedSearchProviderId.set(enabledIds.includes(providerId) ? providerId : 'url')
+  },
+  setSelectedPublicSearchService: (serviceId) => {
+    settings$.selectedPublicSearchServiceId.set(normalizePublicSearchServiceId(serviceId))
   },
   addCustomSearchProvider: (name, templateUrl): string | null => {
     const trimmedName = name.trim()
