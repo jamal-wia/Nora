@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'bun:test'
-import { continuePosts, parseSearchResults, toInstagramPost, unwrapResultUrl, type PublicPost } from './public-posts'
+import {
+  buildProfileSearchPageUrl,
+  buildProfileSearchQuery,
+  continuePosts,
+  fetchProfilePosts,
+  isChallengePage,
+  parseNextPageForm,
+  parseSearchResults,
+  toInstagramPost,
+  unwrapResultUrl,
+  type PublicPost,
+} from './public-posts'
 
 // The shape of a real result page of html.duckduckgo.com, cut down to three results.
 const page = `
@@ -129,5 +140,114 @@ describe('continuePosts', () => {
       'none',
       'none2',
     ])
+  })
+})
+
+const nextForm = `
+<div class="nav-link">
+  <form action="/html/" method="post">
+    <input type="submit" class='btn btn--alt' value="Next" />
+    <input type="hidden" name="q" value="site:instagram.com/nasa/" />
+    <input type="hidden" name="s" value="10" />
+    <input type="hidden" name="nextParams" value="" />
+    <input type="hidden" name="vqd" value="4-123" />
+  </form>
+</div>`
+
+const response = (html: string, ok = true) => ({ ok, text: async () => html })
+
+describe('profile search', () => {
+  it('searches only for something that can be a profile name', () => {
+    expect(buildProfileSearchQuery('nasa')).toBe('site:instagram.com/nasa/')
+    expect(buildProfileSearchQuery('nasa.gov_1')).toBe('site:instagram.com/nasa.gov_1/')
+    expect(buildProfileSearchQuery('nasa site:evil.com')).toBeNull()
+    expect(buildProfileSearchQuery('')).toBeNull()
+    expect(buildProfileSearchQuery('a'.repeat(31))).toBeNull()
+  })
+
+  it('builds the page a person can open', () => {
+    expect(buildProfileSearchPageUrl('nasa')).toBe('https://duckduckgo.com/?q=site%3Ainstagram.com%2Fnasa%2F')
+    expect(buildProfileSearchPageUrl('a b')).toBeNull()
+  })
+})
+
+describe('isChallengePage', () => {
+  it('recognises a page that asks for proof of a person', () => {
+    expect(isChallengePage('<form id="challenge-form"><div class="anomaly-modal">Select all squares</div></form>')).toBe(true)
+  })
+
+  it('does not take a page with results for one', () => {
+    expect(isChallengePage(page)).toBe(false)
+  })
+
+  it('does not take an empty result page for one', () => {
+    expect(isChallengePage('<html><body>No results found.</body></html>')).toBe(false)
+  })
+})
+
+describe('parseNextPageForm', () => {
+  it('reads the hidden fields the Next button sends', () => {
+    const body = parseNextPageForm(page + nextForm)!
+    expect(body.get('q')).toBe('site:instagram.com/nasa/')
+    expect(body.get('s')).toBe('10')
+    expect(body.get('vqd')).toBe('4-123')
+    expect(body.has('nextParams')).toBe(true)
+  })
+
+  it('is null on the last page', () => {
+    expect(parseNextPageForm(page)).toBeNull()
+  })
+})
+
+describe('fetchProfilePosts', () => {
+  it('returns the posts not yet shown, newest first', async () => {
+    const result = await fetchProfilePosts('nasa', ['DWwjA6qFG8G'], async () => response(page))
+    expect(result).toEqual({ status: 'ok', posts: [expect.objectContaining({ shortcode: 'DbbSK7rD-SW' })] })
+  })
+
+  it('follows the Next button for a few pages and no further', async () => {
+    const urls: string[] = []
+    const result = await fetchProfilePosts('nasa', [], async (url, init) => {
+      urls.push(`${init?.method || 'GET'} ${url}`)
+      return response(page + nextForm)
+    })
+    expect(urls).toHaveLength(3)
+    expect(urls[0]).toStartWith('GET https://html.duckduckgo.com/html/?q=site%3Ainstagram.com%2Fnasa%2F')
+    expect(urls[1]).toBe('POST https://html.duckduckgo.com/html/')
+    expect(result.status).toBe('ok')
+  })
+
+  it('stops at a check and says so, without answering it', async () => {
+    let calls = 0
+    const result = await fetchProfilePosts('nasa', [], async () => {
+      calls++
+      return response('<div class="anomaly-modal">challenge-form</div>')
+    })
+    expect(result).toEqual({ status: 'challenge' })
+    expect(calls).toBe(1)
+  })
+
+  it('reports an error when the first request fails, and keeps what it has when a later one does', async () => {
+    expect(await fetchProfilePosts('nasa', [], async () => response('', false))).toEqual({ status: 'error' })
+    expect(
+      await fetchProfilePosts('nasa', [], async () => {
+        throw new Error('offline')
+      }),
+    ).toEqual({ status: 'error' })
+
+    let calls = 0
+    const partial = await fetchProfilePosts('nasa', [], async () => (++calls === 1 ? response(page + nextForm) : response('', false)))
+    expect(partial.status).toBe('ok')
+    expect(partial.status === 'ok' && partial.posts.length).toBe(2)
+  })
+
+  it('does not search for a name that is not a profile name', async () => {
+    let calls = 0
+    const result = await fetchProfilePosts('nasa site:evil.com', [], async () => {
+      calls++
+      return response(page)
+    })
+    expect(result).toEqual({ status: 'error' })
+    expect(calls).toBe(0)
   })
 })
