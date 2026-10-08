@@ -34,6 +34,7 @@ Install from App Store, Google Play, F-Droid, or download APK from GitHub.
 - Customize with CSS
 - Anonymous mode: in a separate Anonymous profile, hides sign-in and open-in-app prompts on Facebook, Instagram, Threads, Tumblr and X. It does not unlock content that needs an account
 - Search public posts of a social network without signing in (through DuckDuckGo, which sees the query)
+- Optional: below an Instagram profile in the Anonymous profile, list more of its public posts found through DuckDuckGo (newest first, in pages). Only what the search engine has indexed turns up
 
 ## Supported SNS
 
