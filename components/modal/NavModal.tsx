@@ -24,6 +24,7 @@ import MaterialIcons from '@react-native-vector-icons/material-icons'
 import { NouMenu } from '../menu/NouMenu'
 import { getEnabledSearchProviders, getResolvedSearchProvider, resolveSearchUrl, resolveUrlInput } from '@/lib/search'
 import { SearchProviderIcon } from '../service/SearchProviderIcon'
+import { getProviderLabel } from '../service/searchProviderLabel'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ProfileSelectorChips } from '../profile/ProfileSelectorChips'
 import { colors } from '@/lib/colors'
@@ -83,6 +84,13 @@ export const NavModalContent: React.FC<NavModalContentProps> = ({
         (!currentTab?.profileMode && (!currentTab?.profile || currentTab.profile === 'default')))
       ? AUTO_PROFILE_ID
       : currentTab?.profile || 'default')
+  // The services the person turned off are not offered here either; the one that was chosen is the
+  // first of the rest when it is among them.
+  const turnedOn = publicSearchServiceIds.filter((serviceId) => !disabledServices.includes(serviceId))
+  const shownPublicServiceIds = turnedOn.length ? turnedOn : publicSearchServiceIds
+  const shownPublicServiceId = shownPublicServiceIds.includes(selectedPublicSearchServiceId)
+    ? selectedPublicSearchServiceId
+    : shownPublicServiceIds[0]
   const enabledSearchProviders = getEnabledSearchProviders(enabledSearchProviderIds, customSearchProviders)
   const selectedSearchProvider =
     getResolvedSearchProvider(selectedSearchProviderId, customSearchProviders) || enabledSearchProviders[0]
@@ -100,14 +108,18 @@ export const NavModalContent: React.FC<NavModalContentProps> = ({
     if (onOpenUrl) {
       onOpenUrl(url, openInProfileId || selectedProfile)
     } else {
+      const tab$ = tabs$.tabs[index]
+      if (openInProfileId && !tab$.get()) {
+        // With no tab at all, `updateTabUrl` opens one in whichever profile was chosen last.
+        tabs$.openTab(url, { profile: openInProfileId, profileMode: 'manual' })
+        ui$.assign({ navModalOpen: false })
+        return
+      }
       if (openInProfileId) {
         // Not through `selectProfile`: a one-off search should not become the profile
         // every new tab starts in.
-        const tab$ = tabs$.tabs[index]
-        if (tab$.get()) {
-          tab$.profile.set(openInProfileId)
-          tab$.profileMode.set('manual')
-        }
+        tab$.profile.set(openInProfileId)
+        tab$.profileMode.set('manual')
       }
       tabs$.updateTabUrl(url, index)
     }
@@ -158,7 +170,7 @@ export const NavModalContent: React.FC<NavModalContentProps> = ({
     if (selectedSearchProvider.kind === 'public') {
       // The results are meant to be read without an account, so they open in the
       // Anonymous profile whichever profile is selected above.
-      const publicUrl = resolvePublicSearchUrl(selectedPublicSearchServiceId, value)
+      const publicUrl = resolvePublicSearchUrl(shownPublicServiceId, value)
       if (publicUrl) {
         onPress(publicUrl, settings$.ensureAnonymousProfile())
         setInput('')
@@ -237,7 +249,7 @@ export const NavModalContent: React.FC<NavModalContentProps> = ({
                   </View>
                 }
                 items={enabledSearchProviders.map((provider) => ({
-                  label: provider.name,
+                  label: getProviderLabel(provider),
                   handler: () => settings$.setSelectedSearchProvider(provider.id),
                   icon: <SearchProviderIcon provider={provider} />,
                 }))}
@@ -255,7 +267,7 @@ export const NavModalContent: React.FC<NavModalContentProps> = ({
                 selectedSearchProvider?.kind === 'url'
                   ? t('newTab.search.urlPlaceholder')
                   : selectedSearchProvider?.kind === 'public'
-                    ? t('newTab.search.publicPlaceholder', { service: services[selectedPublicSearchServiceId]?.[0] })
+                    ? t('newTab.search.publicPlaceholder', { service: services[shownPublicServiceId]?.[0] })
                     : t('newTab.search.searchPlaceholder')
               }
               placeholderTextColor={isDark ? tw('#71717a') : tw('#52525b')}
@@ -279,8 +291,8 @@ export const NavModalContent: React.FC<NavModalContentProps> = ({
                 contentContainerClassName="gap-2 px-1"
                 keyboardShouldPersistTaps="handled"
               >
-                {publicSearchServiceIds.map((serviceId) => {
-                  const selected = serviceId === selectedPublicSearchServiceId
+                {shownPublicServiceIds.map((serviceId) => {
+                  const selected = serviceId === shownPublicServiceId
                   return (
                     <Pressable
                       key={serviceId}
@@ -466,7 +478,7 @@ export const NavModalContent: React.FC<NavModalContentProps> = ({
                     )}
                   >
                     <SearchProviderIcon provider={provider} size={20} />
-                    <Text className="flex-1 text-sm text-zinc-900 dark:text-white">{provider.name}</Text>
+                    <Text className="flex-1 text-sm text-zinc-900 dark:text-white">{getProviderLabel(provider)}</Text>
                     {selectedSearchProvider?.id === provider.id ? (
                       <MaterialIcons name="check" size={18} color={tw('#f1f5f9')} />
                     ) : null}

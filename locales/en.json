@@ -287,6 +287,7 @@
       "custom": "Custom Search Providers",
       "empty": "No custom search providers yet.",
       "urlHint": "Always available for direct URL entry.",
+      "publicHint": "Searches the public posts of one social network through DuckDuckGo, which sees the query. Results open in the Anonymous profile, which is created if it is not there.",
       "addTitle": "Add Custom Search",
       "editTitle": "Edit Custom Search",
       "addAction": "Add Search",
@@ -460,8 +461,9 @@
     "search": {
       "urlPlaceholder": "Enter a URL",
       "searchPlaceholder": "Search the web",
+      "publicProvider": "Public posts",
       "publicPlaceholder": "Search public {{service}} posts",
-      "publicHint": "Finds public posts through DuckDuckGo, which sees your query. No account needed. Results open in the Anonymous profile; posts that need a login stay hidden."
+      "publicHint": "Finds public posts through DuckDuckGo, which sees your query. No account needed. This tab switches to the Anonymous profile, where the results open; posts that need a login stay hidden."
     }
   },
   "toast": {

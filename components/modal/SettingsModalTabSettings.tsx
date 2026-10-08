@@ -27,6 +27,7 @@ import {
   isValidSearchTemplate,
 } from '@/lib/search'
 import { SearchProviderIcon } from '../service/SearchProviderIcon'
+import { getProviderLabel } from '../service/searchProviderLabel'
 import { showToast } from '@/lib/toast'
 import {
   enableMentionNotifications,
@@ -1036,9 +1037,12 @@ export const SettingsSearchContent = () => {
                     <NouSwitch
                       label={
                         <View className="pr-3">
-                          <NouText>{provider.name}</NouText>
+                          <NouText>{getProviderLabel(provider)}</NouText>
                           {provider.id === 'url' ? (
                             <NouText className="mt-1 text-sm leading-5 text-zinc-600 dark:text-zinc-400">{t('settings.search.urlHint')}</NouText>
+                          ) : null}
+                          {provider.kind === 'public' ? (
+                            <NouText className="mt-1 text-sm leading-5 text-zinc-600 dark:text-zinc-400">{t('settings.search.publicHint')}</NouText>
                           ) : null}
                         </View>
                       }
