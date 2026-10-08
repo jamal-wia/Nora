@@ -69,10 +69,9 @@ export function initInstagramPostOpener() {
       if (!window.Nora?.getSettings?.().anonymousMode || !isProfileGridPage(document.location.hostname, document.location.pathname)) {
         return
       }
-      // A real link or button does what it says.
-      if ((event.target as Element | null)?.closest?.('a[href], button')) {
-        return
-      }
+      // A tile may sit inside a link of the page's own, which would take the tap to the app, so
+      // a link around the picture is no reason to leave it alone. Only a picture of a post under
+      // the finger is taken over; everything else keeps doing what the page made it do.
       for (const element of document.elementsFromPoint(event.clientX, event.clientY)) {
         const url = element instanceof HTMLImageElement ? getPostUrl(element.currentSrc || element.src) : null
         if (url) {
