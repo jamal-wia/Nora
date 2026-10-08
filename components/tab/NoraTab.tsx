@@ -54,6 +54,7 @@ import {
   loadCosmeticFilters,
 } from '@/lib/blocklist'
 import { blocklist$ } from '@/states/blocklist'
+import { buildAnonymousModeScript, isAnonymousModeActive } from '@/lib/anonymous'
 import { twColor, useTwColor } from '@/lib/theme'
 
 const LOAD_URL_MAX_RETRIES = 5
@@ -238,6 +239,8 @@ export const NoraTab: React.FC<{
   const hideToolbarWhenScrolled = useValue(settings$.hideToolbarWhenScrolled)
   const inspectable = useValue(settings$.inspectable)
   const protectWebRtcIp = useValue(settings$.protectWebRtcIp)
+  const anonymousMode = useValue(settings$.anonymousMode)
+  const anonymousDisabledHosts = useValue(settings$.anonymousDisabledHosts)
   const webRtcGuardScript = useValue(webRtcGuardScript$)
   const youTubeGuardScript = useValue(youTubeGuardScript$)
   const videoEdgeLongPressTo2x = useValue(settings$.videoEdgeLongPressTo2x)
@@ -364,6 +367,13 @@ export const NoraTab: React.FC<{
         // Also switches off the built-in ad blocking in the content script, so the
         // per-site switch covers every kind of blocking and not just the lists.
         adBlockingEnabled: !isAdBlockingDisabledForHost(currentHost),
+        // Only ever on for a tab in the Anonymous profile; see `isAnonymousModeActive`.
+        anonymousMode: isAnonymousModeActive({
+          enabled: anonymousMode,
+          profileId: tab.profile,
+          host: currentHost,
+          disabledHosts: anonymousDisabledHosts || [],
+        }),
       })})`
       const userStylesScript = `window.Nora?.setUserStyles?.(${JSON.stringify(getUserStylesSnapshot())})`
       void executeWebviewJavaScriptQuietly(webview, settingsScript)
@@ -374,7 +384,10 @@ export const NoraTab: React.FC<{
       }
     },
     [
+      anonymousMode,
+      anonymousDisabledHosts,
       doubleTapToToggleHeader,
+      tab.profile,
       tab.url,
       videoEdgeLongPressTo2x,
       translateOnDoubleTap,
@@ -383,6 +396,18 @@ export const NoraTab: React.FC<{
     ],
   )
   const applyContentStateRef = useRef(applyContentState)
+  // What the page is told at document start. Built from the render's values, and read
+  // through a ref by the desktop `dom-ready` handler, which outlives the render.
+  const anonymousModeScript = buildAnonymousModeScript({
+    enabled: anonymousMode,
+    profileId: tab.profile,
+    disabledHosts: anonymousDisabledHosts || [],
+  })
+  const anonymousModeScriptRef = useRef(anonymousModeScript)
+
+  useEffect(() => {
+    anonymousModeScriptRef.current = anonymousModeScript
+  }, [anonymousModeScript])
 
   useEffect(() => {
     applyContentStateRef.current = applyContentState
@@ -452,7 +477,7 @@ export const NoraTab: React.FC<{
         }
         // Desktop has no document-start hook for the content script, so the
         // exceptions ride in front of it -- still before it installs anything.
-        void executeWebviewJavaScript(webview, composeDocumentStartScript(buildAdBlockingExclusionsScript(), contentJsRef.current))
+        void executeWebviewJavaScript(webview, composeDocumentStartScript(buildAdBlockingExclusionsScript(), anonymousModeScriptRef.current, contentJsRef.current))
           .catch(() => {})
           .finally(() => applyContentStateRef.current(webview))
         void refreshCanGoBack(webview)
@@ -1033,7 +1058,11 @@ export const NoraTab: React.FC<{
           }
           profile={tab.profile || 'default'}
           scriptOnStart={contentJs}
-          scriptOnDocumentStart={composeDocumentStartScript(protectWebRtcIp && webRtcGuardScript, youTubeGuardScript)}
+          scriptOnDocumentStart={composeDocumentStartScript(
+            protectWebRtcIp && webRtcGuardScript,
+            youTubeGuardScript,
+            anonymousModeScript,
+          )}
           useragent={getUserAgent(isIos ? 'ios' : 'android', tab.desktopMode)}
           onLoad={onLoad}
           onMessage={onMessage}
