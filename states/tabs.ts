@@ -212,6 +212,8 @@ export type OpenTabOptions = {
   profile?: string
   profileMode?: ProfileMode
   source?: 'manual' | 'child' | 'shared' | 'reuse'
+  /** Load the tab without switching to it, for a page that does its work out of sight. */
+  background?: boolean
 }
 
 export type TabActivationReason = 'user' | 'open' | 'close' | 'back' | 'system'
@@ -376,7 +378,7 @@ export const tabs$: Observable<Store> = observable<Store>({
       lastOpenedUrl = ''
     }, 1000)
 
-    if (settings$.oneTabPerSite.get()) {
+    if (settings$.oneTabPerSite.get() && !options?.background) {
       try {
         const newUrl = new URL(url)
         if (newUrl.hostname) {
@@ -427,7 +429,9 @@ export const tabs$: Observable<Store> = observable<Store>({
     if (options?.source === 'child' && options.parentTabId && options.parentTabId !== tab.id) {
       childBackParentByTabId[tab.id] = options.parentTabId
     }
-    tabs$.setActiveTabIndex(tabs$.tabs.length - 1, 'open')
+    if (!options?.background) {
+      tabs$.setActiveTabIndex(tabs$.tabs.length - 1, 'open')
+    }
     return tab.id
   },
 
