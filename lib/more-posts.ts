@@ -6,6 +6,7 @@ import {
   toEmbedUrl,
   toInstagramPost,
   type PublicPost,
+  type SearchContinuation,
   type SearchResult,
 } from './public-posts'
 
@@ -45,7 +46,27 @@ export interface MorePostsPayload {
 }
 
 const CACHE_TTL_MS = 10 * 60 * 1000
-const cache = new Map<string, { at: number; posts: PublicPost[] }>()
+
+interface CacheEntry {
+  at: number
+  posts: PublicPost[]
+  /** Where the search stopped, when DuckDuckGo has pages after it. */
+  next: SearchContinuation | null
+  /** The newest posts of the first search, which the profile shows itself, and how far back they go. */
+  skipped: Set<string>
+  cutoff: number | null
+  /** How many batches of pages have been read, which is capped so that a long profile is not searched without end. */
+  batches: number
+}
+
+export const MAX_SEARCH_BATCHES = 5
+
+const cache = new Map<string, CacheEntry>()
+
+const freshEntry = (username: string, now: number) => {
+  const entry = cache.get(username.toLowerCase())
+  return entry && now - entry.at <= CACHE_TTL_MS ? entry : undefined
+}
 
 /**
  * One page of what to show below a profile, from what a search found. Nothing is searched for
@@ -54,8 +75,8 @@ const cache = new Map<string, { at: number; posts: PublicPost[] }>()
  */
 export function getMorePostsPage(username: string, page: number, now = Date.now()): MorePostsPayload {
   const searchUrl = buildProfileSearchPageUrl(username)
-  const entry = cache.get(username.toLowerCase())
-  if (!entry || now - entry.at > CACHE_TTL_MS) {
+  const entry = freshEntry(username, now)
+  if (!entry) {
     return { username, page, status: 'idle', posts: [], hasMore: false, searchUrl }
   }
 
@@ -67,14 +88,59 @@ export function getMorePostsPage(username: string, page: number, now = Date.now(
       cards.push({ url: post.url, embedUrl, date: post.date, likes: post.likes, comments: post.comments, caption: post.caption })
     }
   }
-  return { username, page, status: 'ok', posts: cards, hasMore: start + POSTS_PER_PAGE < entry.posts.length, searchUrl }
+  return { username, page, status: 'ok', posts: cards, hasMore: start + POSTS_PER_PAGE < entry.posts.length || entry.next !== null, searchUrl }
 }
 
 /** What the search found for a profile, read in the same way for any way of getting it. */
-export function storeSearchResults(username: string, results: SearchResult[], now = Date.now()) {
+export function storeSearchResults(username: string, results: SearchResult[], next: SearchContinuation | null = null, now = Date.now()) {
   const posts = results.map((result) => toInstagramPost(result, username)).filter((post): post is PublicPost => post !== null)
   // The newest are the ones the profile already shows, whose codes the page does not give.
-  cache.set(username.toLowerCase(), { at: now, posts: continuePosts(posts, []).slice(POSTS_SHOWN_WITHOUT_LOGIN) })
+  const sorted = continuePosts(posts, [])
+  const shown = sorted.slice(0, POSTS_SHOWN_WITHOUT_LOGIN)
+  const dates = shown.map((post) => post.date).filter((date): date is number => date !== null)
+  cache.set(username.toLowerCase(), {
+    at: now,
+    posts: sorted.slice(POSTS_SHOWN_WITHOUT_LOGIN),
+    next,
+    skipped: new Set(shown.map((post) => post.shortcode)),
+    cutoff: dates.length ? Math.min(...dates) : null,
+    batches: 1,
+  })
+}
+
+/**
+ * Adds what a later search of the same profile found, after what is there: the list is not
+ * reshuffled under the person, so each batch is newest first by itself. Posts the first search left
+ * out for the profile's own, and any newer than the oldest of those, are the profile's and stay out.
+ * Returns how many were added; a batch with none ends the search.
+ */
+export function appendSearchResults(username: string, results: SearchResult[], next: SearchContinuation | null, now = Date.now()) {
+  const entry = freshEntry(username, now)
+  if (!entry) {
+    return 0
+  }
+  const known = new Set([...entry.skipped, ...entry.posts.map((post) => post.shortcode)])
+  const posts = results
+    .map((result) => toInstagramPost(result, username))
+    .filter((post): post is PublicPost => post !== null)
+    .filter((post) => !known.has(post.shortcode) && (post.date === null || entry.cutoff === null || post.date < entry.cutoff))
+  const added = continuePosts(posts, [])
+  entry.posts.push(...added)
+  entry.batches += 1
+  entry.next = added.length && entry.batches < MAX_SEARCH_BATCHES ? next : null
+  entry.at = now
+  return added.length
+}
+
+/** Where to carry the search on from, when the list is at its end and DuckDuckGo has more. */
+export function getContinuation(username: string, now = Date.now()) {
+  return freshEntry(username, now)?.next ?? null
+}
+
+/** Whether a page of the list cannot be filled from what was found and a search may find the rest. */
+export function needsMorePosts(username: string, page: number, now = Date.now()) {
+  const entry = freshEntry(username, now)
+  return Boolean(entry?.next) && (Math.max(0, page) + 1) * POSTS_PER_PAGE > (entry?.posts.length ?? 0)
 }
 
 export function clearMorePostsCache() {

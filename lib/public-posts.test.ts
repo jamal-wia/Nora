@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'bun:test'
 import {
+  buildContinuationPageUrl,
   buildProfileSearchPageUrl,
+  getSearchPageOffset,
   getSearchPageUsername,
   buildProfileSearchQuery,
   continuePosts,
   isChallengePage,
   isResultsPage,
+  parseContinuation,
   parseProfileSearchRequest,
+  pickNextForm,
   parseSearchResults,
   toInstagramPost,
   unwrapResultUrl,
@@ -229,5 +233,56 @@ describe('parseProfileSearchRequest', () => {
     }
     expect(parseProfileSearchRequest(undefined)).toBeNull()
     expect(parseProfileSearchRequest(42)).toBeNull()
+  })
+})
+
+describe('carrying a search on', () => {
+  const continuation = { offset: 25, dc: 26, vqd: '4-1699353707029534630', kl: 'wt-wt', nextParams: '' }
+
+  it('picks the form that leads on, not the one that leads back', () => {
+    expect(pickNextForm([10], 0)).toBe(0)
+    expect(pickNextForm([0, 25], 10)).toBe(1)
+    expect(pickNextForm([25, 0], 10)).toBe(0)
+    expect(pickNextForm([10, 40], 25)).toBe(1)
+  })
+
+  it('has no next form at the last page, where only the way back is left', () => {
+    expect(pickNextForm([25], 40)).toBe(-1)
+    expect(pickNextForm([], 0)).toBe(-1)
+    expect(pickNextForm([Number.NaN], 0)).toBe(-1)
+  })
+
+  it('reads where a page of results starts', () => {
+    expect(getSearchPageOffset('https://html.duckduckgo.com/html/?q=x&s=40')).toBe(40)
+    expect(getSearchPageOffset('https://html.duckduckgo.com/html/?q=x')).toBe(0)
+    expect(getSearchPageOffset('https://html.duckduckgo.com/html/?q=x&s=-3')).toBe(0)
+    expect(getSearchPageOffset('nope')).toBe(0)
+  })
+
+  it('builds the page after the ones read, for the same search, and the page is recognised as one of it', () => {
+    const url = buildContinuationPageUrl('nasa', continuation)!
+    expect(url.startsWith('https://html.duckduckgo.com/html/?')).toBe(true)
+    expect(new URL(url).searchParams.get('q')).toBe('site:instagram.com/nasa/')
+    expect(getSearchPageUsername(url)).toBe('nasa')
+    expect(getSearchPageOffset(url)).toBe(25)
+    expect(buildContinuationPageUrl('a b', continuation)).toBeNull()
+  })
+
+  it('takes a continuation from a page only when every field is what DuckDuckGo gives', () => {
+    expect(parseContinuation(continuation)).toEqual(continuation)
+    for (const bad of [
+      null,
+      {},
+      { ...continuation, offset: 0 },
+      { ...continuation, offset: 1001 },
+      { ...continuation, offset: 2.5 },
+      { ...continuation, dc: '26' },
+      { ...continuation, vqd: 'a b' },
+      { ...continuation, vqd: 'x'.repeat(121) },
+      { ...continuation, kl: 'wt wt' },
+      { ...continuation, nextParams: '<script>' },
+    ]) {
+      expect(parseContinuation(bad)).toBeNull()
+    }
   })
 })

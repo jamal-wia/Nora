@@ -174,6 +174,78 @@ export function getSearchPageUsername(url: string) {
   }
 }
 
+/** The offset a page of results starts at: DuckDuckGo's own `s`, which a search of a profile starts without. */
+export function getSearchPageOffset(url: string) {
+  try {
+    const offset = Number(new URL(url).searchParams.get('s') ?? 0)
+    return Number.isInteger(offset) && offset >= 0 ? offset : 0
+  } catch {
+    return 0
+  }
+}
+
+/**
+ * Which of the forms on a page of results goes on to the next one, as an index, or -1 at the last page.
+ * A page after the first has a Previous form as well as a Next one, and what tells them apart is where
+ * they lead: the next page starts further than the one on screen, the previous one before it.
+ */
+export function pickNextForm(offsets: number[], currentOffset: number) {
+  let best = -1
+  offsets.forEach((offset, index) => {
+    if (Number.isFinite(offset) && offset > currentOffset && (best === -1 || offset < offsets[best])) {
+      best = index
+    }
+  })
+  return best
+}
+
+/** Where a search stopped, which is what DuckDuckGo needs to give the pages after it. */
+export interface SearchContinuation {
+  offset: number
+  dc: number
+  vqd: string
+  kl: string
+  nextParams: string
+}
+
+/** A continuation as a search page reports it, or null for anything that is not one. */
+export function parseContinuation(value: unknown): SearchContinuation | null {
+  const { offset, dc, vqd, kl, nextParams } = (value || {}) as Record<string, unknown>
+  if (typeof offset !== 'number' || !Number.isInteger(offset) || offset < 1 || offset > 1000) {
+    return null
+  }
+  if (typeof dc !== 'number' || !Number.isInteger(dc) || dc < 1 || dc > 1100) {
+    return null
+  }
+  if (typeof vqd !== 'string' || !/^[\w-]{1,120}$/.test(vqd) || typeof kl !== 'string' || !/^[A-Za-z-]{2,12}$/.test(kl)) {
+    return null
+  }
+  if (typeof nextParams !== 'string' || !/^[\w.=&%-]{0,200}$/.test(nextParams)) {
+    return null
+  }
+  return { offset, dc, vqd, kl, nextParams }
+}
+
+/** The address of the page of results a search stopped before, for the same search of a profile. */
+export function buildContinuationPageUrl(username: string, continuation: SearchContinuation) {
+  const query = buildProfileSearchQuery(username)
+  if (!query) {
+    return null
+  }
+  const params = new URLSearchParams({
+    q: query,
+    s: String(continuation.offset),
+    nextParams: continuation.nextParams,
+    v: 'l',
+    o: 'json',
+    dc: String(continuation.dc),
+    api: 'd.js',
+    vqd: continuation.vqd,
+    kl: continuation.kl,
+  })
+  return `${SEARCH_ENDPOINT}?${params}`
+}
+
 /**
  * Whether the page is a page of results, or says there are none, as opposed to anything else that
  * could be in its place: a check in a form this does not know, an error, a redesign. Only a page

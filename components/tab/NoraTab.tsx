@@ -55,7 +55,7 @@ import {
 } from '@/lib/blocklist'
 import { blocklist$ } from '@/states/blocklist'
 import { buildAnonymousModeScript, isAnonymousModeActive, isAnonymousProfile } from '@/lib/anonymous'
-import { getMorePostsPage } from '@/lib/more-posts'
+import { getMorePostsPage, needsMorePosts } from '@/lib/more-posts'
 import { isInstagramHost, isSearchHost, parseLoadMoreRequest } from '@/lib/profile-search'
 import { profileSearch, sendMorePosts } from '@/lib/profile-search-runtime'
 import { twColor, useTwColor } from '@/lib/theme'
@@ -802,7 +802,10 @@ export const NoraTab: React.FC<{
         const pageHost = getHostFromUrl(pageUrlRef.current || tab.url)
         const request = parseLoadMoreRequest(data)
         if (request && anonymousMorePosts && anonymousActive(pageHost) && isInstagramHost(pageHost)) {
-          sendMorePosts(tab.id, getMorePostsPage(request.username, request.page))
+          // A page that what was found cannot fill is asked of the search again; it is shown when that answers.
+          if (!needsMorePosts(request.username, request.page) || !profileSearch.more(tab.id, request.username, request.page)) {
+            sendMorePosts(tab.id, getMorePostsPage(request.username, request.page))
+          }
         }
         break
       }

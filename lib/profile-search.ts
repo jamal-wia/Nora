@@ -1,5 +1,12 @@
-import { storeSearchResults, getMorePostsPage, type MorePostsPayload } from './more-posts'
-import { parseProfileSearchRequest, type SearchResult } from './public-posts'
+import {
+  appendSearchResults,
+  getContinuation,
+  getMorePostsPage,
+  needsMorePosts,
+  storeSearchResults,
+  type MorePostsPayload,
+} from './more-posts'
+import { buildContinuationPageUrl, parseContinuation, parseProfileSearchRequest, type SearchResult } from './public-posts'
 
 /**
  * A search for a profile's posts runs in a tab of its own that the person does not see unless
@@ -31,6 +38,8 @@ interface PendingSearch {
   startedAt: number
   timer: unknown
   shown: boolean
+  /** Set for a search that carries an earlier one on, and the page of the list it is for. */
+  continuationFor?: number
 }
 
 export const MAX_SEARCH_RESULTS = 60
@@ -94,7 +103,7 @@ export function createProfileSearch(ports: ProfileSearchPorts) {
     }
     close(searchTabId, entry)
     if (ports.tabExists(entry.parentTabId)) {
-      ports.sendToTab(entry.parentTabId, { ...getMorePostsPage(entry.username, 0), status: 'error' })
+      ports.sendToTab(entry.parentTabId, { ...getMorePostsPage(entry.username, entry.continuationFor ?? 0), status: 'error' })
     }
   }
 
@@ -117,7 +126,33 @@ export function createProfileSearch(ports: ProfileSearchPorts) {
     }
   }
 
+  const open = (parentTabId: string, username: string, url: string, continuationFor?: number) => {
+    const searchTabId = ports.openSearchTab(url, parentTabId)
+    if (!searchTabId) {
+      ports.sendToTab(parentTabId, { ...getMorePostsPage(username, continuationFor ?? 0), status: 'error' })
+      return false
+    }
+    const entry: PendingSearch = { parentTabId, username, startedAt: ports.now(), timer: undefined, shown: false, continuationFor }
+    entry.timer = ports.setInterval(() => tick(searchTabId), TICK_MS)
+    pending.set(searchTabId, entry)
+    return true
+  }
+
+  const hasPending = (parentTabId: string) => [...pending.values()].some((entry) => entry.parentTabId === parentTabId)
+
+  /** Carries the search on for a page of the list that what was found cannot fill. */
+  const more = (parentTabId: string, username: string, page: number) => {
+    const continuation = getContinuation(username)
+    const url = continuation && buildContinuationPageUrl(username, continuation)
+    if (!url || hasPending(parentTabId)) {
+      return false
+    }
+    return open(parentTabId, username, url, page)
+  }
+
   return {
+    more,
+
     /**
      * A page asks for the search of a profile's posts. `allowed` is the app's side of it: the setting is
      * on, the tab is in the Anonymous profile and the page is Instagram.
@@ -128,41 +163,37 @@ export function createProfileSearch(ports: ProfileSearchPorts) {
         return false
       }
       // One at a time for a tab: a page that asks again is not given more tabs.
-      for (const entry of pending.values()) {
-        if (entry.parentTabId === parentTabId) {
-          return false
-        }
-      }
-      const searchTabId = ports.openSearchTab(request.url, parentTabId)
-      if (!searchTabId) {
-        ports.sendToTab(parentTabId, { ...getMorePostsPage(request.username, 0), status: 'error' })
+      if (hasPending(parentTabId)) {
         return false
       }
-      const entry: PendingSearch = {
-        parentTabId,
-        username: request.username,
-        startedAt: ports.now(),
-        timer: undefined,
-        shown: false,
-      }
-      entry.timer = ports.setInterval(() => tick(searchTabId), TICK_MS)
-      pending.set(searchTabId, entry)
-      return true
+      return open(parentTabId, request.username, request.url)
     },
 
     /** The search tab reports what it found. Only the page of a search the app started is listened to. */
     complete(searchTabId: string, data: unknown, fromSearchPage: boolean) {
       const entry = pending.get(searchTabId)
-      const { username, results } = (data || {}) as { username?: unknown; results?: unknown }
+      const { username, results, next } = (data || {}) as { username?: unknown; results?: unknown; next?: unknown }
       if (!entry || !fromSearchPage || username !== entry.username) {
         return false
       }
       finish(searchTabId)
-      storeSearchResults(entry.username, sanitizeSearchResults(results))
-      close(searchTabId, entry)
-      if (ports.tabExists(entry.parentTabId)) {
-        ports.sendToTab(entry.parentTabId, getMorePostsPage(entry.username, 0))
+      const continuation = parseContinuation(next)
+      const page = entry.continuationFor ?? 0
+      if (entry.continuationFor === undefined) {
+        storeSearchResults(entry.username, sanitizeSearchResults(results), continuation)
+      } else {
+        appendSearchResults(entry.username, sanitizeSearchResults(results), continuation)
       }
+      close(searchTabId, entry)
+      if (!ports.tabExists(entry.parentTabId)) {
+        return true
+      }
+      // A batch that left the page short is followed by the next one rather than showing half a page
+      // that the list would then skip the rest of.
+      if (needsMorePosts(entry.username, page) && more(entry.parentTabId, entry.username, page)) {
+        return true
+      }
+      ports.sendToTab(entry.parentTabId, getMorePostsPage(entry.username, page))
       return true
     },
 

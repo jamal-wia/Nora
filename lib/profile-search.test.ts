@@ -10,8 +10,8 @@ import {
   sanitizeSearchResults,
   type ProfileSearchPorts,
 } from './profile-search'
-import { clearMorePostsCache, getMorePostsPage } from './more-posts'
-import { buildProfileSearchPageUrl } from './public-posts'
+import { clearMorePostsCache, getMorePostsPage, needsMorePosts } from './more-posts'
+import { buildProfileSearchPageUrl, POSTS_PER_PAGE, POSTS_SHOWN_WITHOUT_LOGIN } from './public-posts'
 import type { MorePostsPayload } from './more-posts'
 
 const SEARCH_URL = buildProfileSearchPageUrl('nasa')!
@@ -258,5 +258,71 @@ describe('hosts', () => {
     expect(isSearchHost('html.duckduckgo.com')).toBe(true)
     expect(isSearchHost('duckduckgo.com')).toBe(false)
     expect(isSearchHost('html.duckduckgo.com.evil.net')).toBe(false)
+  })
+})
+
+describe('carrying a search on', () => {
+  const next = { offset: 40, dc: 41, vqd: '4-123', kl: 'wt-wt', nextParams: '' }
+  const dated = (code: string, year: number) => ({
+    url: `https://www.instagram.com/nasa/p/${code}/`,
+    title: '',
+    snippet: `1K likes, 2 comments - nasa on May 1, ${year}: "post ${code}"`,
+  })
+  const batch = (prefix: string, count: number, from: number) => Array.from({ length: count }, (_, i) => dated(`${prefix}${i}`, from - i))
+
+  it('opens the page after the ones read and fills the page of the list with what it finds', () => {
+    const { state, search } = setup()
+    search.start('parent', { url: SEARCH_URL }, true)
+    search.complete('search1', { username: 'nasa', results: batch('a', POSTS_SHOWN_WITHOUT_LOGIN + POSTS_PER_PAGE + 5, 2030), next }, true)
+    expect(state.sent.at(-1)?.payload).toMatchObject({ page: 0, hasMore: true })
+    expect(needsMorePosts('nasa', 1)).toBe(true)
+
+    expect(search.more('parent', 'nasa', 1)).toBe(true)
+    expect(new URL(state.openUrls.at(-1)!).searchParams.get('s')).toBe('40')
+    expect(search.isSearchTab('search2')).toBe(true)
+
+    search.complete('search2', { username: 'nasa', results: batch('b', POSTS_PER_PAGE, 2010), next: null }, true)
+    expect(state.tabs.has('search2')).toBe(false)
+    const last = state.sent.at(-1)!
+    expect(last.tabId).toBe('parent')
+    expect(last.payload).toMatchObject({ page: 1, status: 'ok', hasMore: true })
+    expect(last.payload.posts).toHaveLength(POSTS_PER_PAGE)
+  })
+
+  it('goes on to a further batch when the one it found still leaves the page short', () => {
+    const { state, search } = setup()
+    search.start('parent', { url: SEARCH_URL }, true)
+    search.complete('search1', { username: 'nasa', results: batch('a', POSTS_SHOWN_WITHOUT_LOGIN + 2, 2030), next }, true)
+    search.more('parent', 'nasa', 0)
+    const sentBefore = state.sent.length
+    search.complete('search2', { username: 'nasa', results: batch('b', 3, 2010), next }, true)
+    expect(state.sent).toHaveLength(sentBefore)
+    expect(search.isSearchTab('search3')).toBe(true)
+  })
+
+  it('does not search on for a list that is not there, from a tab that already searches, or when there is nothing after it', () => {
+    const { state, search } = setup()
+    expect(search.more('parent', 'nasa', 1)).toBe(false)
+    search.start('parent', { url: SEARCH_URL }, true)
+    search.complete('search1', { username: 'nasa', results: batch('a', POSTS_SHOWN_WITHOUT_LOGIN + 2, 2030), next: null }, true)
+    expect(search.more('parent', 'nasa', 1)).toBe(false)
+    expect(state.openUrls).toHaveLength(1)
+  })
+
+  it('tells the tab which page failed, and can be asked again', () => {
+    const { state, search, advance } = setup()
+    search.start('parent', { url: SEARCH_URL }, true)
+    search.complete('search1', { username: 'nasa', results: batch('a', POSTS_SHOWN_WITHOUT_LOGIN + POSTS_PER_PAGE + 2, 2030), next }, true)
+    search.more('parent', 'nasa', 1)
+    advance(SEARCH_GIVE_UP_AFTER_MS)
+    expect(state.sent.at(-1)?.payload).toMatchObject({ page: 1, status: 'error' })
+    expect(search.more('parent', 'nasa', 1)).toBe(true)
+  })
+
+  it('ignores a continuation a page made up', () => {
+    const { search } = setup()
+    search.start('parent', { url: SEARCH_URL }, true)
+    search.complete('search1', { username: 'nasa', results: batch('a', POSTS_SHOWN_WITHOUT_LOGIN + 2, 2030), next: { ...next, vqd: '<x>' } }, true)
+    expect(search.more('parent', 'nasa', 1)).toBe(false)
   })
 })

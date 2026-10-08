@@ -245,6 +245,7 @@ export function initMorePosts() {
   let timer: ReturnType<typeof setTimeout> | undefined
   let current: { username: string; block: HTMLElement; gate: HTMLElement; page: number; loading: boolean } | null = null
   let observer: IntersectionObserver | undefined
+  let moreObserver: IntersectionObserver | undefined
 
   const remove = () => {
     if (!current) {
@@ -260,6 +261,8 @@ export function initMorePosts() {
     embeds.clear()
     observer?.disconnect()
     observer = undefined
+    moreObserver?.disconnect()
+    moreObserver = undefined
   }
 
   const request = (page: number) => {
@@ -267,8 +270,46 @@ export function initMorePosts() {
       return
     }
     current.loading = true
-    current.page = page
     emit('load-more-posts', { username: current.username, page })
+  }
+
+  /**
+   * The button that shows more, which presses itself once it comes near the screen, so that the list goes
+   * on as it is scrolled. After a failure it is left to the person, so that it does not retry without end.
+   */
+  const addMoreButton = (block: HTMLElement, labels: MorePostsLabels, automatic: boolean) => {
+    const more = create('button', `${buttonCss}margin:16px auto;`, labels.more)
+    more.type = 'button'
+    more.setAttribute('data-more-button', '1')
+    more.addEventListener('click', () => {
+      if (current && !current.loading) {
+        moreObserver?.unobserve(more)
+        more.remove()
+        renderStatus(block, null)
+        request(current.page + 1)
+      }
+    })
+    block.appendChild(more)
+    if (automatic) {
+      moreObserver ??= new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (entry.isIntersecting && current && !current.loading) {
+              ;(entry.target as HTMLElement).click()
+            }
+          }
+        },
+        { rootMargin: '600px' },
+      )
+      moreObserver.observe(more)
+    }
+  }
+
+  const placeNote = (block: HTMLElement, labels: MorePostsLabels) => {
+    block.querySelector('[data-more-note]')?.remove()
+    const note = create('div', `padding:8px 16px 20px;text-align:center;font-size:12px;line-height:16px;opacity:${MUTED_OPACITY};`, labels.note)
+    note.setAttribute('data-more-note', '1')
+    block.appendChild(note)
   }
 
   const renderStatus = (block: HTMLElement, text: string | null) => {
@@ -365,10 +406,18 @@ export function initMorePosts() {
     const { block } = current
     block.querySelector('[data-more-status]')?.remove()
     block.querySelector('[data-more-button]')?.remove()
+    // A later part that could not be had leaves the list as it is, and says so with a way to try again.
+    if (payload.status === 'error' && payload.page > 0) {
+      renderStatus(block, payload.labels.error)
+      addMoreButton(block, payload.labels, false)
+      placeNote(block, payload.labels)
+      return
+    }
     if (payload.status === 'idle' || payload.status === 'error') {
       renderContinue(block, payload, payload.status === 'error' ? payload.labels.error : undefined)
       return
     }
+    current.page = payload.page
 
     // A first page is a new list: what was shown before, when a search has been done again after the
     // last one went stale, is replaced and not added to.
@@ -392,23 +441,11 @@ export function initMorePosts() {
       block.appendChild(renderCard(card, payload.labels))
     }
     if (payload.hasMore) {
-      const more = create('button', `${buttonCss}margin:16px auto;`, payload.labels.more)
-      more.type = 'button'
-      more.setAttribute('data-more-button', '1')
-      more.addEventListener('click', () => {
-        if (current && !current.loading) {
-          more.disabled = true
-          more.style.opacity = '0.7'
-          request(current.page + 1)
-        }
-      })
-      block.appendChild(more)
+      addMoreButton(block, payload.labels, true)
     } else if (payload.page === 0 && !payload.posts.length) {
       renderStatus(block, payload.labels.empty)
     }
-    const note = create('div', `padding:8px 16px 20px;text-align:center;font-size:12px;line-height:16px;opacity:${MUTED_OPACITY};`, payload.labels.note)
-    note.setAttribute('data-more-note', '1')
-    block.appendChild(note)
+    placeNote(block, payload.labels)
   }
 
   const scan = () => {

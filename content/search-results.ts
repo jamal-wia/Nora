@@ -1,5 +1,13 @@
 import { noraSettingsEvent } from './nora'
-import { getSearchPageUsername, isChallengePage, isResultsPage, parseSearchResults, type SearchResult } from '../lib/public-posts'
+import {
+  getSearchPageOffset,
+  getSearchPageUsername,
+  isChallengePage,
+  isResultsPage,
+  parseSearchResults,
+  pickNextForm,
+  type SearchResult,
+} from '../lib/public-posts'
 
 const STORAGE_KEY = '__nora_posts_search'
 const MAX_PAGES = 3
@@ -10,6 +18,8 @@ interface SearchState {
   startedAt: number
   username: string
   page: number
+  /** Where the page on screen starts, which is how its Next form is told from its Previous one. */
+  offset: number
   results: SearchResult[]
 }
 
@@ -19,6 +29,17 @@ const readState = (): SearchState | null => {
     return state && Date.now() - state.startedAt < STATE_LIFETIME_MS ? state : null
   } catch {
     return null
+  }
+}
+
+const readNextFields = (form: HTMLFormElement) => {
+  const data = new FormData(form)
+  return {
+    offset: Number(data.get('s')),
+    dc: Number(data.get('dc')),
+    vqd: String(data.get('vqd') ?? ''),
+    kl: String(data.get('kl') ?? ''),
+    nextParams: String(data.get('nextParams') ?? ''),
   }
 }
 
@@ -59,24 +80,33 @@ export function initSearchResultsReporter(emit: (type: string, data: unknown) =>
     }
     handled = true
 
-    // The address of a search for a profile starts one; the pages after it have none to read.
-    const started = getSearchPageUsername(document.location.href)
-    const state: SearchState | null = started ? { startedAt: Date.now(), username: started, page: 0, results: [] } : readState()
+    // The address of a search for a profile starts one, at the page it names; the pages after it have none to read.
+    const { href } = document.location
+    const started = getSearchPageUsername(href)
+    const state: SearchState | null = started
+      ? { startedAt: Date.now(), username: started, page: 0, offset: getSearchPageOffset(href), results: [] }
+      : readState()
     if (!state) {
       return
     }
 
     state.results.push(...parseSearchResults(html))
     state.page += 1
-    const next = document.querySelector<HTMLFormElement>('.nav-link form')
+    // A page after the first has a Previous form before its Next one, and following the first would go back.
+    const forms = [...document.querySelectorAll<HTMLFormElement>('.nav-link form')]
+    const offsets = forms.map((form) => Number(new FormData(form).get('s')))
+    const index = pickNextForm(offsets, state.offset)
+    const next = index === -1 ? null : forms[index]
     if (state.page < MAX_PAGES && next) {
+      state.offset = offsets[index]
       writeState(state)
       next.submit()
       return
     }
 
     writeState(null)
-    emit('search-results', { username: state.username, results: state.results })
+    // Where this stopped goes with the results, so that the app can ask for the pages after it.
+    emit('search-results', { username: state.username, results: state.results, next: next ? readNextFields(next) : null })
   }
 
   window.addEventListener(noraSettingsEvent, run)
