@@ -1,16 +1,34 @@
 import { getProfileUsername } from './more-posts'
 
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
-// A media id is a 19 digit number. Some image addresses carry the id of the account
-// after it, with nothing in between.
-const MEDIA_ID_LENGTH = 19
+// A media id is a number of up to 19 digits, which starts with the time it was made: the milliseconds
+// since this moment, shifted by 23 bits. Some image addresses carry the id of the account after it,
+// with nothing in between, so where the id ends is told by the time it would stand for.
+const INSTAGRAM_EPOCH_MS = 1314220021721n
+const MIN_MEDIA_ID_LENGTH = 15
+const MAX_MEDIA_ID_LENGTH = 19
+const DAY_MS = 86_400_000n
+
+/**
+ * The id at the start of a run of digits: the longest start of it that stands for a time that has
+ * been, which is the whole of it unless more digits were glued on. Null when none does.
+ */
+export function pickMediaId(digits: string, now = Date.now()) {
+  for (let length = Math.min(digits.length, MAX_MEDIA_ID_LENGTH); length >= MIN_MEDIA_ID_LENGTH; length--) {
+    const id = digits.slice(0, length)
+    if ((BigInt(id) >> 23n) + INSTAGRAM_EPOCH_MS <= BigInt(now) + DAY_MS) {
+      return id
+    }
+  }
+  return null
+}
 
 /**
  * The id of the post a picture belongs to, read from its address: Instagram marks
  * every picture with the id of its post, base64 encoded, as `ig_cache_key`. Null for
  * a picture that is not a post's, such as a profile photo.
  */
-export function getMediaId(src: string) {
+export function getMediaId(src: string, now = Date.now()) {
   try {
     const key = new URL(src).searchParams.get('ig_cache_key')
     if (!key) {
@@ -21,7 +39,7 @@ export function getMediaId(src: string) {
       encoded += '='
     }
     const digits = atob(encoded).match(/^\d+/)?.[0]
-    return digits ? digits.slice(0, MEDIA_ID_LENGTH) : null
+    return digits ? pickMediaId(digits, now) : null
   } catch {
     return null
   }
@@ -42,14 +60,14 @@ export function toShortcode(mediaId: string) {
 }
 
 /** The embed page of the post that a picture on a profile belongs to, or null. */
-export function getPostEmbedUrl(src: string) {
-  const url = getPostUrl(src)
+export function getPostEmbedUrl(src: string, now = Date.now()) {
+  const url = getPostUrl(src, now)
   return url ? getEmbedUrlForPage('www.instagram.com', new URL(url).pathname) : null
 }
 
 /** The address of the post that a picture on a profile belongs to, or null. */
-export function getPostUrl(src: string) {
-  const id = getMediaId(src)
+export function getPostUrl(src: string, now = Date.now()) {
+  const id = getMediaId(src, now)
   const code = id && toShortcode(id)
   return code ? `https://www.instagram.com/p/${code}/` : null
 }
@@ -90,12 +108,16 @@ export function initInstagramPostOpener() {
 
   // A visitor's post page is swapped for its embed page, also when the site moves to it
   // without loading a page, which is why this is checked again as the page changes.
+  let redirectingTo = ''
   const redirectPostPage = () => {
     if (window.top !== window || !window.Nora?.getSettings?.().anonymousMode) {
       return
     }
     const embedUrl = getEmbedUrlForPage(document.location.hostname, document.location.pathname)
-    if (embedUrl) {
+    // Asked once: the page goes on changing while the embed page is on its way, and each change
+    // would start the move over.
+    if (embedUrl && embedUrl !== redirectingTo) {
+      redirectingTo = embedUrl
       document.location.replace(embedUrl)
     }
   }
@@ -127,18 +149,25 @@ export function initInstagramPostOpener() {
       if (!window.Nora?.getSettings?.().anonymousMode || !isProfileGridPage(document.location.hostname, document.location.pathname)) {
         return
       }
-      // A tile may sit inside a link of the page's own, which would take the tap to the app, so
-      // a link around the picture is no reason to leave it alone. Only a picture of a post under
-      // the finger is taken over; everything else keeps doing what the page made it do.
-      for (const element of document.elementsFromPoint(event.clientX, event.clientY)) {
-        const url = element instanceof HTMLImageElement ? getPostEmbedUrl(element.currentSrc || element.src) : null
-        if (url) {
-          event.preventDefault()
-          event.stopImmediatePropagation()
-          // In this tab, on the page that has the player, so that going back lands on the profile.
-          document.location.assign(url)
-          return
-        }
+      // The tap is the person's own, with nothing held: a held key or another button asks for something else.
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+        return
+      }
+      // Only what was tapped is looked at, not what lies under it. A tile may sit inside a link of the
+      // page's own, which would take the tap to the app, so a link around the picture is no reason to
+      // leave it alone; but a button over the grid, or the sign-up link under which the grid goes on,
+      // keeps doing what the page made it do.
+      const target = event.target
+      if (!(target instanceof Element)) {
+        return
+      }
+      const pictures = target instanceof HTMLImageElement ? [target] : [...target.querySelectorAll('img')]
+      const url = pictures.length === 1 ? getPostEmbedUrl(pictures[0].currentSrc || pictures[0].src) : null
+      if (url) {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        // In this tab, on the page that has the player, so that going back lands on the profile.
+        document.location.assign(url)
       }
     },
     true,
