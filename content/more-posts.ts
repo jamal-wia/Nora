@@ -93,8 +93,67 @@ const create = <K extends keyof HTMLElementTagNameMap>(tag: K, css: string, text
   return element
 }
 
+// Instagram's own look, on whatever theme the page is in: the text and the page behind it are
+// inherited, and what is grey on one theme is a fainter shade of the same text on the other.
+const INSTAGRAM_BLUE = '#0095f6'
+const DIVIDER = 'rgba(127,127,127,0.3)'
+const MUTED_OPACITY = '0.6'
+
+const buttonCss =
+  `display:block;margin:12px auto 0;padding:7px 16px;border:0;border-radius:8px;background:${INSTAGRAM_BLUE};` +
+  'color:#fff;font:inherit;font-size:14px;font-weight:600;line-height:18px;cursor:pointer;'
+
+const spinner = () => {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  svg.setAttribute('viewBox', '0 0 24 24')
+  svg.setAttribute('width', '28')
+  svg.setAttribute('height', '28')
+  svg.style.cssText = 'display:block;margin:0 auto;opacity:0.6;'
+  const arc = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
+  for (const [name, value] of Object.entries({
+    cx: '12', cy: '12', r: '9', fill: 'none', stroke: 'currentColor', 'stroke-width': '2.5', 'stroke-linecap': 'round', 'stroke-dasharray': '42 100',
+  })) {
+    arc.setAttribute(name, value)
+  }
+  const turn = document.createElementNS('http://www.w3.org/2000/svg', 'animateTransform')
+  for (const [name, value] of Object.entries({
+    attributeName: 'transform', type: 'rotate', from: '0 12 12', to: '360 12 12', dur: '0.9s', repeatCount: 'indefinite',
+  })) {
+    turn.setAttribute(name, value)
+  }
+  arc.appendChild(turn)
+  svg.appendChild(arc)
+  return svg
+}
+
+const ICON_PATHS = {
+  heart:
+    'M16.792 3.904A4.989 4.989 0 0 1 21.5 9.122c0 3.072-2.652 4.959-5.197 7.222-2.512 2.243-3.865 3.469-4.303 3.752-.477-.309-2.143-1.823-4.303-3.752C5.141 14.072 2.5 12.167 2.5 9.122a4.989 4.989 0 0 1 4.708-5.218 4.21 4.21 0 0 1 3.675 1.941c.84 1.175.98 1.763 1.12 1.763s.278-.588 1.11-1.766a4.17 4.17 0 0 1 3.679-1.938Z',
+  comment: 'M20.656 17.008a9.993 9.993 0 1 0-3.59 3.615L22 22Z',
+}
+
+/** A count with its outline icon, the way Instagram shows likes and comments. */
+const countWithIcon = (icon: keyof typeof ICON_PATHS, count: string) => {
+  const item = create('span', 'display:inline-flex;align-items:center;gap:6px;margin-right:16px;font-weight:600;')
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  svg.setAttribute('viewBox', '0 0 24 24')
+  svg.setAttribute('width', '18')
+  svg.setAttribute('height', '18')
+  svg.style.cssText = 'display:block;'
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+  for (const [name, value] of Object.entries({
+    d: ICON_PATHS[icon], fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linejoin': 'round', 'stroke-linecap': 'round',
+  })) {
+    path.setAttribute(name, value)
+  }
+  svg.appendChild(path)
+  item.appendChild(svg)
+  item.appendChild(document.createTextNode(count))
+  return item
+}
+
 const formatDate = (date: number) =>
-  new Date(date).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })
+  new Date(date).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' })
 
 /** Shows the block below a profile and fills it with what the app finds. */
 export function initMorePosts() {
@@ -123,12 +182,17 @@ export function initMorePosts() {
     emit('load-more-posts', { username: current.username, page })
   }
 
-  const renderStatus = (block: HTMLElement, text: string, searchUrl?: string | null, labels?: MorePostsLabels) => {
+  const renderStatus = (block: HTMLElement, text: string | null, searchUrl?: string | null, labels?: MorePostsLabels) => {
     block.querySelector('[data-more-status]')?.remove()
-    const status = create('div', 'padding:12px 4px;font-size:14px;opacity:0.8;', text)
+    const status = create('div', 'padding:20px 16px;text-align:center;font-size:14px;line-height:18px;')
     status.setAttribute('data-more-status', '1')
+    if (text === null) {
+      status.appendChild(spinner())
+    } else {
+      status.appendChild(create('div', `opacity:${MUTED_OPACITY};`, text))
+    }
     if (searchUrl && labels) {
-      const button = create('button', 'display:block;margin:10px 0 0;padding:8px 14px;border-radius:999px;border:1px solid currentColor;background:transparent;color:inherit;font:inherit;', labels.openSearch)
+      const button = create('button', buttonCss, labels.openSearch)
       button.type = 'button'
       button.addEventListener('click', () => emit('new-tab', { url: searchUrl, kind: 'link' }))
       status.appendChild(button)
@@ -137,24 +201,44 @@ export function initMorePosts() {
   }
 
   const renderCard = (card: MorePostCard, labels: MorePostsLabels) => {
-    const wrapper = create('div', 'margin:12px 0;border:1px solid rgba(127,127,127,0.35);border-radius:12px;overflow:hidden;')
-    const meta = [card.date !== null ? formatDate(card.date) : '', card.likes ? `♥ ${card.likes}` : '', card.comments ? `💬 ${card.comments}` : '']
-      .filter(Boolean)
-      .join('  ·  ')
-    if (meta) {
-      wrapper.appendChild(create('div', 'padding:10px 12px 0;font-size:13px;opacity:0.75;', meta))
+    const wrapper = create('div', `padding:12px 0;border-bottom:1px solid ${DIVIDER};`)
+
+    // Counts on the left, the date on the right, the way a post's header reads.
+    const header = create('div', 'display:flex;justify-content:space-between;align-items:center;gap:12px;padding:0 16px;font-size:14px;line-height:18px;')
+    const counts = create('div', 'display:flex;align-items:center;')
+    if (card.likes) {
+      counts.appendChild(countWithIcon('heart', card.likes))
     }
+    if (card.comments) {
+      counts.appendChild(countWithIcon('comment', card.comments))
+    }
+    header.appendChild(counts)
+    if (card.date !== null) {
+      header.appendChild(create('span', `font-size:12px;opacity:${MUTED_OPACITY};`, formatDate(card.date)))
+    }
+    if (card.likes || card.comments || card.date !== null) {
+      wrapper.appendChild(header)
+    }
+
     if (card.caption) {
-      wrapper.appendChild(create('div', 'padding:6px 12px 0;font-size:14px;line-height:1.4;', card.caption))
+      wrapper.appendChild(
+        create(
+          'div',
+          'padding:6px 16px 0;font-size:14px;line-height:18px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;',
+          card.caption,
+        ),
+      )
     }
+
     // The picture comes from Instagram's own embed page, loaded only once the card is near the screen.
-    const frame = create('iframe', 'display:block;width:100%;height:560px;border:0;margin-top:8px;')
+    const frame = create('iframe', 'display:block;width:100%;max-width:540px;height:560px;border:0;margin:10px auto 0;')
     frame.setAttribute('data-src', card.embedUrl)
     frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups')
     frame.setAttribute('loading', 'lazy')
     wrapper.appendChild(frame)
     observer?.observe(frame)
-    const open = create('a', 'display:block;padding:10px 12px;font-size:14px;', labels.openPost)
+
+    const open = create('a', `display:block;padding:10px 16px 0;font-size:14px;font-weight:600;line-height:18px;color:${INSTAGRAM_BLUE};text-decoration:none;`, labels.openPost)
     open.href = card.url
     open.addEventListener('click', (event) => {
       event.preventDefault()
@@ -173,6 +257,15 @@ export function initMorePosts() {
     const { block } = current
     block.querySelector('[data-more-status]')?.remove()
     block.querySelector('[data-more-button]')?.remove()
+    if (!block.querySelector('[data-more-title]')) {
+      const title = create(
+        'div',
+        `padding:16px 16px 8px;text-align:center;font-size:12px;font-weight:600;letter-spacing:0.6px;text-transform:uppercase;opacity:${MUTED_OPACITY};`,
+        payload.labels.title,
+      )
+      title.setAttribute('data-more-title', '1')
+      block.insertBefore(title, block.firstChild)
+    }
 
     if (payload.status === 'challenge') {
       renderStatus(block, payload.labels.challenge, payload.searchUrl, payload.labels)
@@ -186,12 +279,13 @@ export function initMorePosts() {
       block.appendChild(renderCard(card, payload.labels))
     }
     if (payload.hasMore) {
-      const more = create('button', 'display:block;width:100%;margin:8px 0;padding:12px;border-radius:12px;border:1px solid currentColor;background:transparent;color:inherit;font:inherit;', payload.labels.more)
+      const more = create('button', `${buttonCss}margin:16px auto;`, payload.labels.more)
       more.type = 'button'
       more.setAttribute('data-more-button', '1')
       more.addEventListener('click', () => {
         if (current && !current.loading) {
           more.disabled = true
+          more.style.opacity = '0.7'
           request(current.page + 1)
         }
       })
@@ -200,7 +294,7 @@ export function initMorePosts() {
       renderStatus(block, payload.labels.empty)
     }
     if (!block.querySelector('[data-more-note]')) {
-      const note = create('div', 'padding:4px 4px 16px;font-size:12px;opacity:0.65;', payload.labels.note)
+      const note = create('div', `padding:8px 16px 20px;text-align:center;font-size:12px;line-height:16px;opacity:${MUTED_OPACITY};`, payload.labels.note)
       note.setAttribute('data-more-note', '1')
       block.appendChild(note)
     }
@@ -237,13 +331,13 @@ export function initMorePosts() {
       },
       { rootMargin: '400px' },
     )
-    const block = create('div', 'padding:8px 12px;', '')
+    const block = create('div', `margin-top:4px;border-top:1px solid ${DIVIDER};`)
     block.id = blockId
     found.gate.setAttribute(hiddenAttribute, '1')
     found.gate.style.setProperty('display', 'none', 'important')
     found.grid.insertAdjacentElement('afterend', block)
     current = { username, block, gate: found.gate, page: 0, loading: false }
-    renderStatus(block, '…')
+    renderStatus(block, null)
     request(0)
   }
 
