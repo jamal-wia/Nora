@@ -40,7 +40,6 @@ import { openUrlInDesktopTab } from '@/lib/desktop-view-actions'
 import {
   executeWebviewJavaScript,
   executeWebviewJavaScriptQuietly,
-  getTabWebview,
   registerTabWebview,
 } from '@/lib/webview'
 import { getUserStylesSnapshot, userStyles$ } from '@/states/user-styles'
@@ -56,48 +55,10 @@ import {
 } from '@/lib/blocklist'
 import { blocklist$ } from '@/states/blocklist'
 import { buildAnonymousModeScript, isAnonymousModeActive, isAnonymousProfile } from '@/lib/anonymous'
-import { getMorePostsPage, peekSearchTab, registerSearchTab, storeSearchResults, takeSearchTab } from '@/lib/more-posts'
-import { resolveAnonymousTabRequest } from '@/lib/anonymous-tab'
+import { getMorePostsPage } from '@/lib/more-posts'
+import { isInstagramHost, isSearchHost, parseLoadMoreRequest } from '@/lib/profile-search'
+import { profileSearch, sendMorePosts } from '@/lib/profile-search-runtime'
 import { twColor, useTwColor } from '@/lib/theme'
-
-const getMorePostsLabels = () => ({
-  title: t('morePosts.title'),
-  more: t('morePosts.more'),
-  openPost: t('morePosts.openPost'),
-  note: t('morePosts.note'),
-  error: t('morePosts.error'),
-  empty: t('morePosts.empty'),
-  continue: t('morePosts.continue'),
-  continueHint: t('morePosts.continueHint'),
-  searching: t('morePosts.searching'),
-  unavailable: t('morePosts.unavailable'),
-  retry: t('morePosts.retry'),
-})
-
-// A search runs out of sight in a tab of its own. If DuckDuckGo asks for a check, the person has to
-// see the page to pass it, so the tab is brought forward after this long without results; and
-// the search is given up on after the longer one.
-const SEARCH_CHECK_AFTER_MS = 8_000
-const SEARCH_GIVE_UP_AFTER_MS = 120_000
-
-// What a search page reports is a page's word, and is cut down to what the list is made from.
-const closeTabById = (tabId: string) => {
-  const index = tabs$.tabs.get().findIndex((currentTab) => currentTab?.id === tabId)
-  if (index !== -1) {
-    tabs$.closeTab(index)
-  }
-}
-
-const MAX_SEARCH_RESULTS = 60
-const sanitizeSearchResults = (value: unknown) =>
-  (Array.isArray(value) ? value : [])
-    .slice(0, MAX_SEARCH_RESULTS)
-    .filter((result) => typeof result?.url === 'string' && typeof result?.snippet === 'string')
-    .map((result) => ({
-      url: String(result.url).slice(0, 500),
-      title: String(result.title ?? '').slice(0, 300),
-      snippet: String(result.snippet).slice(0, 1500),
-    }))
 
 const LOAD_URL_MAX_RETRIES = 5
 const LOAD_URL_RETRY_DELAY = 100
@@ -825,78 +786,24 @@ export const NoraTab: React.FC<{
         await ensureDownloadNotificationPermission()
         getCurrentWebview()?.saveFile(data.content, data.fileName, data.mimeType)
         break
-      case 'open-anonymous-tab': {
-        // The search page for a profile's posts, opened out of sight in a tab of the profile of
-        // this one. It reports back, and this tab gets the posts.
-        const request = resolveAnonymousTabRequest(data?.url)
-        if (request?.searchUsername && anonymousActive(getHostFromUrl(pageUrlRef.current || tab.url))) {
-          const searchTabId = tabs$.openTab(request.url, {
-            parentTabId: tab.id,
-            source: 'child',
-            profile: tab.profile,
-            profileMode: 'manual',
-            background: true,
-          })
-          if (searchTabId) {
-            registerSearchTab(searchTabId, tab.id, request.searchUsername)
-            const parentTabId = tab.id
-            setTimeout(() => {
-              if (peekSearchTab(searchTabId)) {
-                tabs$.setActiveTabById(searchTabId, 'system')
-              }
-            }, SEARCH_CHECK_AFTER_MS)
-            setTimeout(() => {
-              const pending = takeSearchTab(searchTabId)
-              if (!pending) {
-                return
-              }
-              closeTabById(searchTabId)
-              tabs$.setActiveTabById(parentTabId, 'system')
-              void executeWebviewJavaScriptQuietly(
-                getTabWebview(parentTabId),
-                `window.Nora?.setMorePosts?.(${JSON.stringify({ ...getMorePostsPage(pending.username, 0), status: 'error', labels: getMorePostsLabels() })})`,
-              )
-            }, SEARCH_GIVE_UP_AFTER_MS)
-          }
-        }
+      case 'search-profile-posts': {
+        // The search for a profile's posts: only what the person turned on, for Instagram, in the
+        // Anonymous profile; the rest of what a page may ask for is decided in `profileSearch`.
+        const pageHost = getHostFromUrl(pageUrlRef.current || tab.url)
+        profileSearch.start(tab.id, data, anonymousMorePosts && anonymousActive(pageHost) && isInstagramHost(pageHost))
         break
       }
       case 'search-results': {
-        // What the search page found, from a tab this one opened for a profile: the posts go to the
-        // tab it was opened from, which carries on from them, and this one has done its job.
-        const pending = takeSearchTab(tab.id)
-        if (!pending || data?.username !== pending.username || !anonymousActive(getHostFromUrl(pageUrlRef.current || tab.url))) {
-          break
-        }
-        storeSearchResults(pending.username, sanitizeSearchResults(data.results))
-        tabs$.setActiveTabById(pending.parentTabId, 'system')
-        closeTabById(tab.id)
-        void executeWebviewJavaScriptQuietly(
-          getTabWebview(pending.parentTabId),
-          `window.Nora?.setMorePosts?.(${JSON.stringify({ ...getMorePostsPage(pending.username, 0), labels: getMorePostsLabels() })})`,
-        )
+        const pageHost = getHostFromUrl(pageUrlRef.current || tab.url)
+        profileSearch.complete(tab.id, data, isSearchHost(pageHost) && anonymousActive(pageHost))
         break
       }
       case 'load-more-posts': {
-        // A page asking for this is only listened to where the person turned it on for the tab.
         const pageHost = getHostFromUrl(pageUrlRef.current || tab.url)
-        const page = Number(data?.page)
-        if (
-          !anonymousMorePosts ||
-          !anonymousActive(pageHost) ||
-          !(pageHost === 'instagram.com' || pageHost.endsWith('.instagram.com')) ||
-          typeof data?.username !== 'string' ||
-          !Number.isInteger(page) ||
-          page < 0 ||
-          page > 50
-        ) {
-          break
+        const request = parseLoadMoreRequest(data)
+        if (request && anonymousMorePosts && anonymousActive(pageHost) && isInstagramHost(pageHost)) {
+          sendMorePosts(tab.id, getMorePostsPage(request.username, request.page))
         }
-        const payload = getMorePostsPage(data.username, page)
-        void executeWebviewJavaScriptQuietly(
-          webviewRef.current || nativeRef.current,
-          `window.Nora?.setMorePosts?.(${JSON.stringify({ ...payload, labels: getMorePostsLabels() })})`,
-        )
         break
       }
       case 'scroll':

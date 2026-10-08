@@ -5,6 +5,8 @@ import {
   buildProfileSearchQuery,
   continuePosts,
   isChallengePage,
+  isResultsPage,
+  parseProfileSearchRequest,
   parseSearchResults,
   toInstagramPost,
   unwrapResultUrl,
@@ -171,6 +173,19 @@ describe('getSearchPageUsername', () => {
   })
 })
 
+describe('isResultsPage', () => {
+  it('is a page with results, or one that says there are none', () => {
+    expect(isResultsPage(page)).toBe(true)
+    expect(isResultsPage('<div class="no-results">No results.</div>')).toBe(true)
+    expect(isResultsPage('<html><body>No results found for site:instagram.com/x/</body></html>')).toBe(true)
+  })
+
+  it('is not a page that is neither, such as a check in a form that is not known', () => {
+    expect(isResultsPage('<html><body><form id="verify">Please confirm you are human</form></body></html>')).toBe(false)
+    expect(isResultsPage('')).toBe(false)
+  })
+})
+
 describe('isChallengePage', () => {
   it('recognises a page that asks for proof of a person', () => {
     expect(isChallengePage('<form id="challenge-form"><div class="anomaly-modal">Select all squares</div></form>')).toBe(true)
@@ -182,5 +197,37 @@ describe('isChallengePage', () => {
 
   it('does not take an empty result page for one', () => {
     expect(isChallengePage('<html><body>No results found.</body></html>')).toBe(false)
+  })
+})
+
+describe('parseProfileSearchRequest', () => {
+  it('takes the search page for the posts of a profile, and says which profile', () => {
+    expect(parseProfileSearchRequest('https://html.duckduckgo.com/html/?q=site%3Ainstagram.com%2Fnasa%2F')).toEqual({
+      url: 'https://html.duckduckgo.com/html/?q=site%3Ainstagram.com%2Fnasa%2F',
+      username: 'nasa',
+    })
+  })
+
+  it('refuses every other address', () => {
+    for (const url of [
+      'https://www.instagram.com/p/DeKe4mpkipT/',
+      'https://www.instagram.com/nasa/',
+      'https://duckduckgo.com/',
+      'https://duckduckgo.com/?q=site%3Ainstagram.com%2Fnasa%2F',
+      'https://html.duckduckgo.com/html/?q=hello',
+      'https://html.duckduckgo.com/html/?q=site%3Aevil.net%2Fnasa%2F',
+      'https://html.duckduckgo.com/html/?q=site%3Ainstagram.com%2Fnasa%2F%20site%3Aevil.net',
+      'https://html.duckduckgo.com/l/?uddg=https%3A%2F%2Fevil.net',
+      'http://html.duckduckgo.com/html/?q=site%3Ainstagram.com%2Fnasa%2F',
+      'https://user:pw@html.duckduckgo.com/html/?q=site%3Ainstagram.com%2Fnasa%2F',
+      'https://html.duckduckgo.com:8443/html/?q=site%3Ainstagram.com%2Fnasa%2F',
+      'https://html.duckduckgo.com.evil.net/html/?q=site%3Ainstagram.com%2Fnasa%2F',
+      'javascript:alert(1)',
+      'not a url',
+    ]) {
+      expect(parseProfileSearchRequest(url)).toBeNull()
+    }
+    expect(parseProfileSearchRequest(undefined)).toBeNull()
+    expect(parseProfileSearchRequest(42)).toBeNull()
   })
 })

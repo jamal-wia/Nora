@@ -175,6 +175,15 @@ export function getSearchPageUsername(url: string) {
 }
 
 /**
+ * Whether the page is a page of results, or says there are none, as opposed to anything else that
+ * could be in its place: a check in a form this does not know, an error, a redesign. Only a page
+ * that is one or the other is reported, so a page that is neither is left in front of the person.
+ */
+export function isResultsPage(html: string) {
+  return parseSearchResults(html).length > 0 || /class="no-results"|No results found/i.test(html)
+}
+
+/**
  * Whether the page is DuckDuckGo asking for proof of a person instead of results.
  * It is never answered or worked around: the caller sends the person to the page.
  */
@@ -203,4 +212,24 @@ export function toEmbedUrl(post: Pick<PublicPost, 'url'>) {
   } catch {
     return null
   }
+}
+
+/**
+ * What a page may ask the app to open in a tab of its own, from the Anonymous profile: DuckDuckGo's
+ * page that searches for the posts of one profile. Anything else a page asks for is refused, so a
+ * page cannot use this to open whatever address it likes in that profile.
+ */
+export function parseProfileSearchRequest(url: unknown) {
+  if (typeof url !== 'string') {
+    return null
+  }
+  const username = getSearchPageUsername(url)
+  if (!username) {
+    return null
+  }
+  const parsed = new URL(url)
+  if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port) {
+    return null
+  }
+  return { url: parsed.toString(), username }
 }

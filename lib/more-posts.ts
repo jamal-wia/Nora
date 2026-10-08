@@ -18,6 +18,21 @@ export interface MorePostCard {
   caption: string
 }
 
+/** The words the list shows, resolved by the app so that the page needs no translation. */
+export interface MorePostsLabels {
+  title: string
+  more: string
+  openPost: string
+  note: string
+  error: string
+  empty: string
+  continue: string
+  continueHint: string
+  searching: string
+  unavailable: string
+  retry: string
+}
+
 export interface MorePostsPayload {
   username: string
   page: number
@@ -62,22 +77,9 @@ export function storeSearchResults(username: string, results: SearchResult[], no
   cache.set(username.toLowerCase(), { at: now, posts: continuePosts(posts, []).slice(POSTS_SHOWN_WITHOUT_LOGIN) })
 }
 
-// The tab of a search page opened for a profile, and the tab it was opened from, which is where
-// the posts found go.
-const searchTabs = new Map<string, { parentTabId: string; username: string }>()
-
-export const registerSearchTab = (tabId: string, parentTabId: string, username: string) =>
-  searchTabs.set(tabId, { parentTabId, username })
-
-export const peekSearchTab = (tabId: string) => searchTabs.get(tabId)
-
-export function takeSearchTab(tabId: string) {
-  const entry = searchTabs.get(tabId)
-  searchTabs.delete(tabId)
-  return entry
-}
-
 export function clearMorePostsCache() {
   cache.clear()
-  searchTabs.clear()
 }
+
+/** What the app hands the page: a page of the list and the words to show it with. */
+export type MorePostsMessage = MorePostsPayload & { labels: MorePostsLabels }

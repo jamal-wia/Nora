@@ -1,10 +1,13 @@
 import { noraSettingsEvent } from './nora'
-import { getSearchPageUsername, isChallengePage, parseSearchResults, type SearchResult } from '../lib/public-posts'
+import { getSearchPageUsername, isChallengePage, isResultsPage, parseSearchResults, type SearchResult } from '../lib/public-posts'
 
 const STORAGE_KEY = '__nora_posts_search'
 const MAX_PAGES = 3
+// A search that has been left half way is not carried on by whatever page of results comes next.
+const STATE_LIFETIME_MS = 60_000
 
 interface SearchState {
+  startedAt: number
   username: string
   page: number
   results: SearchResult[]
@@ -12,7 +15,8 @@ interface SearchState {
 
 const readState = (): SearchState | null => {
   try {
-    return JSON.parse(sessionStorage.getItem(STORAGE_KEY) || 'null')
+    const state: SearchState | null = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || 'null')
+    return state && Date.now() - state.startedAt < STATE_LIFETIME_MS ? state : null
   } catch {
     return null
   }
@@ -50,14 +54,14 @@ export function initSearchResultsReporter(emit: (type: string, data: unknown) =>
       return
     }
     const html = document.documentElement.outerHTML
-    if (isChallengePage(html)) {
+    if (isChallengePage(html) || !isResultsPage(html)) {
       return
     }
     handled = true
 
     // The address of a search for a profile starts one; the pages after it have none to read.
     const started = getSearchPageUsername(document.location.href)
-    const state: SearchState | null = started ? { username: started, page: 0, results: [] } : readState()
+    const state: SearchState | null = started ? { startedAt: Date.now(), username: started, page: 0, results: [] } : readState()
     if (!state) {
       return
     }

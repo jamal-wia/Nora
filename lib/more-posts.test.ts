@@ -1,12 +1,5 @@
 import { beforeEach, describe, expect, it } from 'bun:test'
-import {
-  clearMorePostsCache,
-  getMorePostsPage,
-  peekSearchTab,
-  registerSearchTab,
-  storeSearchResults,
-  takeSearchTab,
-} from './more-posts'
+import { clearMorePostsCache, getMorePostsPage, storeSearchResults } from './more-posts'
 import { POSTS_PER_PAGE, POSTS_SHOWN_WITHOUT_LOGIN, toEmbedUrl } from './public-posts'
 
 const result = (code: string, day: number) => ({
@@ -84,19 +77,5 @@ describe('storeSearchResults', () => {
   it('ignores results that are not posts of the profile', () => {
     storeSearchResults('nasa', [result('abcde', 1), { url: 'https://example.com/', title: '', snippet: '' }], 0)
     expect(getMorePostsPage('nasa', 0, 1)).toMatchObject({ status: 'ok', posts: [], hasMore: false })
-  })
-})
-
-describe('search tabs', () => {
-  it('remembers the tab a search page was opened from, until it is taken', () => {
-    registerSearchTab('search-tab', 'profile-tab', 'nasa')
-    expect(peekSearchTab('search-tab')).toEqual({ parentTabId: 'profile-tab', username: 'nasa' })
-    expect(takeSearchTab('search-tab')).toEqual({ parentTabId: 'profile-tab', username: 'nasa' })
-    expect(takeSearchTab('search-tab')).toBeUndefined()
-    expect(peekSearchTab('search-tab')).toBeUndefined()
-  })
-
-  it('knows nothing of a tab it did not open', () => {
-    expect(takeSearchTab('other-tab')).toBeUndefined()
   })
 })

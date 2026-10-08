@@ -1,4 +1,5 @@
 import { emit } from './utils'
+import type { MorePostCard, MorePostsLabels, MorePostsMessage } from '../lib/more-posts'
 import { noraMorePostsEvent, noraSettingsEvent } from './nora'
 import { EMBED_AUTOMATIC_RETRIES, EMBED_LOAD_TIMEOUT_MS, clampEmbedHeight, isEmbedLoaded, parseEmbedMessage } from './embed-messages'
 
@@ -10,39 +11,6 @@ const hiddenAttribute = 'data-nora-more-posts-hidden'
 const reservedPaths = new Set([
   'about', 'accounts', 'api', 'challenge', 'developer', 'direct', 'directory', 'explore', 'legal', 'p', 'reel', 'reels', 'stories', 'tv', 'web',
 ])
-
-export interface MorePostsLabels {
-  title: string
-  more: string
-  openPost: string
-  note: string
-  error: string
-  empty: string
-  continue: string
-  continueHint: string
-  searching: string
-  unavailable: string
-  retry: string
-}
-
-interface MorePostCard {
-  url: string
-  embedUrl: string
-  date: number | null
-  likes: string | null
-  comments: string | null
-  caption: string
-}
-
-interface MorePostsPayload {
-  username: string
-  page: number
-  status: 'idle' | 'ok' | 'error'
-  posts: MorePostCard[]
-  hasMore: boolean
-  searchUrl: string | null
-  labels: MorePostsLabels
-}
 
 /** The profile this page is, or null for any other page. */
 export function getProfileUsername(hostname: string, pathname: string) {
@@ -300,7 +268,7 @@ export function initMorePosts() {
    * posts, found through a search -- and a line on who sees the name. Nothing is looked up until
    * it is pressed.
    */
-  const renderContinue = (block: HTMLElement, payload: MorePostsPayload, message?: string) => {
+  const renderContinue = (block: HTMLElement, payload: MorePostsMessage, message?: string) => {
     block.querySelector('[data-more-status]')?.remove()
     block.querySelector('[data-more-title]')?.remove()
     const status = create('div', 'padding:16px 16px 20px;text-align:center;font-size:14px;line-height:18px;')
@@ -316,7 +284,7 @@ export function initMorePosts() {
       }
       renderStatus(block, null)
       block.querySelector('[data-more-status]')?.appendChild(create('div', `margin-top:10px;font-size:12px;opacity:${MUTED_OPACITY};`, payload.labels.searching))
-      emit('open-anonymous-tab', { url: payload.searchUrl })
+      emit('search-profile-posts', { url: payload.searchUrl })
     })
     status.appendChild(button)
     status.appendChild(create('div', `margin-top:10px;font-size:12px;line-height:16px;opacity:${MUTED_OPACITY};`, payload.labels.continueHint))
@@ -372,7 +340,7 @@ export function initMorePosts() {
   }
 
   const onPayload = (event: Event) => {
-    const payload = (event as CustomEvent<MorePostsPayload>).detail
+    const payload = (event as CustomEvent<MorePostsMessage>).detail
     if (!current || payload?.username !== current.username) {
       return
     }
