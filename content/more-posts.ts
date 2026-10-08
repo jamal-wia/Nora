@@ -4,7 +4,6 @@ import { noraMorePostsEvent, noraSettingsEvent } from './nora'
 import { EMBED_AUTOMATIC_RETRIES, EMBED_LOAD_TIMEOUT_MS, clampEmbedHeight, isEmbedLoaded, parseEmbedMessage } from './embed-messages'
 
 const SCAN_DELAY_MS = 400
-const blockId = '_nora_more_posts'
 const hiddenAttribute = 'data-nora-more-posts-hidden'
 
 // Paths on instagram.com that are a page of their own and not somebody's profile.
@@ -164,6 +163,10 @@ export function initMorePosts() {
    * tried once more and then replaced by a note that can be tried again by hand.
    */
   const startEmbed = (embed: EmbedCard) => {
+    // Gone with the list it was in: nothing is started, or waited for, for a card that is not there.
+    if (!embeds.has(embed)) {
+      return
+    }
     embed.loaded = false
     clearTimeout(embed.timer)
     embed.frame.src = embed.url
@@ -174,7 +177,7 @@ export function initMorePosts() {
       if (embed.attempts < EMBED_AUTOMATIC_RETRIES) {
         embed.attempts += 1
         embed.frame.removeAttribute('src')
-        setTimeout(() => startEmbed(embed), 300)
+        embed.timer = setTimeout(() => startEmbed(embed), 300)
       } else {
         showEmbedUnavailable(embed)
       }
@@ -255,6 +258,9 @@ export function initMorePosts() {
     block.querySelector('[data-more-status]')?.remove()
     const status = create('div', 'padding:20px 16px;text-align:center;font-size:14px;line-height:18px;')
     status.setAttribute('data-more-status', '1')
+    // Announced as it changes: a search, an error and an empty list are all said aloud.
+    status.setAttribute('role', 'status')
+    status.setAttribute('aria-live', 'polite')
     if (text === null) {
       status.appendChild(spinner())
     } else {
@@ -270,9 +276,10 @@ export function initMorePosts() {
    */
   const renderContinue = (block: HTMLElement, payload: MorePostsMessage, message?: string) => {
     block.querySelector('[data-more-status]')?.remove()
-    block.querySelector('[data-more-title]')?.remove()
     const status = create('div', 'padding:16px 16px 20px;text-align:center;font-size:14px;line-height:18px;')
     status.setAttribute('data-more-status', '1')
+    status.setAttribute('role', 'status')
+    status.setAttribute('aria-live', 'polite')
     if (message) {
       status.appendChild(create('div', `margin-bottom:12px;opacity:${MUTED_OPACITY};`, message))
     }
@@ -288,11 +295,12 @@ export function initMorePosts() {
     })
     status.appendChild(button)
     status.appendChild(create('div', `margin-top:10px;font-size:12px;line-height:16px;opacity:${MUTED_OPACITY};`, payload.labels.continueHint))
-    block.appendChild(status)
+    block.insertBefore(status, block.querySelector('[data-more-note]'))
   }
 
   const renderCard = (card: MorePostCard, labels: MorePostsLabels) => {
     const wrapper = create('div', `padding:12px 0;border-bottom:1px solid ${DIVIDER};`)
+    wrapper.setAttribute('data-more-card', '1')
 
     // Counts on the left, the date on the right, the way a post's header reads.
     const header = create('div', 'display:flex;justify-content:space-between;align-items:center;gap:12px;padding:0 16px;font-size:14px;line-height:18px;')
@@ -323,7 +331,9 @@ export function initMorePosts() {
 
     // The picture comes from Instagram's own embed page, loaded only once the card is near the screen.
     const frame = create('iframe', 'display:block;width:100%;max-width:540px;height:560px;border:0;margin:10px auto 0;')
-    frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups')
+    // No sandbox: the page is on instagram.com like this one, and a sandbox that lets its scripts keep their
+    // origin leaves nothing to separate them. The posts the embed page may show are Instagram's to show.
+    frame.title = card.caption.slice(0, 80) || labels.openPost
     frame.setAttribute('loading', 'lazy')
     wrapper.appendChild(frame)
     const embed: EmbedCard = { frame, wrapper, url: card.embedUrl, labels, attempts: 0, loaded: false, timer: undefined }
@@ -352,6 +362,22 @@ export function initMorePosts() {
       renderContinue(block, payload, payload.status === 'error' ? payload.labels.error : undefined)
       return
     }
+
+    // A first page is a new list: what was shown before, when a search has been done again after the
+    // last one went stale, is replaced and not added to.
+    if (payload.page === 0) {
+      for (const stale of block.querySelectorAll('[data-more-card], [data-more-divider]')) {
+        stale.remove()
+      }
+      for (const embed of [...embeds]) {
+        if (!embed.wrapper.isConnected) {
+          clearTimeout(embed.timer)
+          embeds.delete(embed)
+        }
+      }
+    }
+    // The note is the foot of the list, so it is taken off while the list grows and put back after.
+    block.querySelector('[data-more-note]')?.remove()
     if (!block.querySelector('[data-more-divider]')) {
       block.insertBefore(createDivider(payload.labels.title), block.firstChild)
     }
@@ -373,11 +399,9 @@ export function initMorePosts() {
     } else if (payload.page === 0 && !payload.posts.length) {
       renderStatus(block, payload.labels.empty)
     }
-    if (!block.querySelector('[data-more-note]')) {
-      const note = create('div', `padding:8px 16px 20px;text-align:center;font-size:12px;line-height:16px;opacity:${MUTED_OPACITY};`, payload.labels.note)
-      note.setAttribute('data-more-note', '1')
-      block.appendChild(note)
-    }
+    const note = create('div', `padding:8px 16px 20px;text-align:center;font-size:12px;line-height:16px;opacity:${MUTED_OPACITY};`, payload.labels.note)
+    note.setAttribute('data-more-note', '1')
+    block.appendChild(note)
   }
 
   const scan = () => {
@@ -414,7 +438,6 @@ export function initMorePosts() {
     )
     // Straight under the grid, so the list carries on from it.
     const block = create('div', 'margin:0;padding:0;')
-    block.id = blockId
     found.gate.setAttribute(hiddenAttribute, '1')
     found.gate.style.setProperty('display', 'none', 'important')
     found.grid.insertAdjacentElement('afterend', block)

@@ -444,7 +444,7 @@
     "title": "More posts via search",
     "more": "Show more",
     "openPost": "Open post",
-    "note": "Found through DuckDuckGo search, so some posts may be missing. The newest posts are the ones shown above.",
+    "note": "Found through DuckDuckGo search, so some posts may be missing. The twelve newest results are left out, as the profile above already shows about that many.",
     "error": "Could not load more posts.",
     "empty": "No more posts were found.",
     "continue": "Continue with search",
