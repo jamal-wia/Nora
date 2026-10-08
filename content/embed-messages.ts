@@ -42,3 +42,7 @@ export const clampEmbedHeight = (height: number) => Math.min(Math.max(Math.round
 /** How long a post gets to report that it is on screen, and how many times it is tried again. */
 export const EMBED_LOAD_TIMEOUT_MS = 12_000
 export const EMBED_AUTOMATIC_RETRIES = 1
+
+/** When a post that said it is on screen is looked at once more, and the least height of a page that really shows one. */
+export const EMBED_RENDER_CHECK_MS = 2500
+export const MIN_RENDERED_EMBED_HEIGHT = 150

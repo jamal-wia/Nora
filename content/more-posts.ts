@@ -2,7 +2,15 @@ import { emit } from './utils'
 import type { MorePostCard, MorePostsLabels, MorePostsMessage } from '../lib/more-posts'
 import { noraMorePostsEvent, noraSettingsEvent } from './nora'
 import { getAnonymousCss } from './anonymous'
-import { EMBED_AUTOMATIC_RETRIES, EMBED_LOAD_TIMEOUT_MS, clampEmbedHeight, isEmbedLoaded, parseEmbedMessage } from './embed-messages'
+import {
+  EMBED_AUTOMATIC_RETRIES,
+  EMBED_LOAD_TIMEOUT_MS,
+  EMBED_RENDER_CHECK_MS,
+  MIN_RENDERED_EMBED_HEIGHT,
+  clampEmbedHeight,
+  isEmbedLoaded,
+  parseEmbedMessage,
+} from './embed-messages'
 
 const SCAN_DELAY_MS = 400
 const hiddenAttribute = 'data-nora-more-posts-hidden'
@@ -170,22 +178,57 @@ export function initMorePosts() {
     }
     embed.loaded = false
     clearTimeout(embed.timer)
+    showEmbedSpinner(embed)
     embed.frame.src = embed.url
     embed.timer = setTimeout(() => {
-      if (embed.loaded) {
-        return
-      }
-      if (embed.attempts < EMBED_AUTOMATIC_RETRIES) {
-        embed.attempts += 1
-        embed.frame.removeAttribute('src')
-        embed.timer = setTimeout(() => startEmbed(embed), 300)
-      } else {
-        showEmbedUnavailable(embed)
+      if (!embed.loaded) {
+        failEmbed(embed)
       }
     }, EMBED_LOAD_TIMEOUT_MS)
   }
 
+  const failEmbed = (embed: EmbedCard) => {
+    if (embed.attempts < EMBED_AUTOMATIC_RETRIES) {
+      embed.attempts += 1
+      embed.frame.removeAttribute('src')
+      embed.timer = setTimeout(() => startEmbed(embed), 300)
+    } else {
+      showEmbedUnavailable(embed)
+    }
+  }
+
+  /** The slot a post will fill says so while it waits, instead of standing empty. */
+  const showEmbedSpinner = (embed: EmbedCard) => {
+    if (embed.wrapper.querySelector('[data-embed-spinner]')) {
+      return
+    }
+    const holder = create('div', 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;')
+    holder.setAttribute('data-embed-spinner', '1')
+    holder.appendChild(spinner())
+    embed.frame.parentElement?.appendChild(holder)
+  }
+
+  const hideEmbedSpinner = (embed: EmbedCard) => embed.wrapper.querySelector('[data-embed-spinner]')?.remove()
+
+  /** A page can say it is on screen and still be blank; a frame that shows nothing is tried again like one that never answered. */
+  const checkEmbedRendered = (embed: EmbedCard) => {
+    if (!embeds.has(embed) || !embed.loaded) {
+      return
+    }
+    try {
+      const rendered = embed.frame.contentDocument?.querySelector('.Embed')
+      if (rendered && rendered.getBoundingClientRect().height > MIN_RENDERED_EMBED_HEIGHT) {
+        return
+      }
+    } catch {
+      return
+    }
+    embed.loaded = false
+    failEmbed(embed)
+  }
+
   const showEmbedUnavailable = (embed: EmbedCard) => {
+    hideEmbedSpinner(embed)
     embed.frame.removeAttribute('src')
     embed.frame.style.display = 'none'
     // The link leads to the same page, which would not show the post either.
@@ -221,6 +264,8 @@ export function initMorePosts() {
       if (isEmbedLoaded(message)) {
         embed.loaded = true
         clearTimeout(embed.timer)
+        hideEmbedSpinner(embed)
+        setTimeout(() => checkEmbedRendered(embed), EMBED_RENDER_CHECK_MS)
       }
       return
     }
@@ -331,12 +376,14 @@ export function initMorePosts() {
     }
 
     // The picture comes from Instagram's own embed page, loaded only once the card is near the screen.
-    const frame = create('iframe', 'display:block;width:100%;max-width:540px;height:560px;border:0;margin:10px auto 0;')
+    const slot = create('div', 'position:relative;max-width:540px;margin:10px auto 0;')
+    const frame = create('iframe', 'display:block;width:100%;height:560px;border:0;')
     // No sandbox: the page is on instagram.com like this one, and a sandbox that lets its scripts keep their
     // origin leaves nothing to separate them. The posts the embed page may show are Instagram's to show.
     frame.title = card.caption.slice(0, 80) || labels.openPost
     frame.setAttribute('loading', 'lazy')
-    wrapper.appendChild(frame)
+    slot.appendChild(frame)
+    wrapper.appendChild(slot)
     // The embed page is on instagram.com like this one, so what the mode hides on an embed page can be hidden
     // inside the card too, once it has loaded.
     frame.addEventListener('load', () => {
