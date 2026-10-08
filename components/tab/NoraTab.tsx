@@ -40,6 +40,7 @@ import { openUrlInDesktopTab } from '@/lib/desktop-view-actions'
 import {
   executeWebviewJavaScript,
   executeWebviewJavaScriptQuietly,
+  getTabWebview,
   registerTabWebview,
 } from '@/lib/webview'
 import { getUserStylesSnapshot, userStyles$ } from '@/states/user-styles'
@@ -55,9 +56,33 @@ import {
 } from '@/lib/blocklist'
 import { blocklist$ } from '@/states/blocklist'
 import { buildAnonymousModeScript, isAnonymousModeActive, isAnonymousProfile } from '@/lib/anonymous'
-import { getMorePostsPage } from '@/lib/more-posts'
+import { getMorePostsPage, registerSearchTab, storeSearchResults, takeSearchTab } from '@/lib/more-posts'
 import { resolveAnonymousTabRequest } from '@/lib/anonymous-tab'
 import { twColor, useTwColor } from '@/lib/theme'
+
+const getMorePostsLabels = () => ({
+  title: t('morePosts.title'),
+  loading: t('morePosts.loading'),
+  more: t('morePosts.more'),
+  openSearch: t('morePosts.openSearch'),
+  openPost: t('morePosts.openPost'),
+  note: t('morePosts.note'),
+  challenge: t('morePosts.challenge'),
+  error: t('morePosts.error'),
+  empty: t('morePosts.empty'),
+})
+
+// What a search page reports is a page's word, and is cut down to what the list is made from.
+const MAX_SEARCH_RESULTS = 60
+const sanitizeSearchResults = (value: unknown) =>
+  (Array.isArray(value) ? value : [])
+    .slice(0, MAX_SEARCH_RESULTS)
+    .filter((result) => typeof result?.url === 'string' && typeof result?.snippet === 'string')
+    .map((result) => ({
+      url: String(result.url).slice(0, 500),
+      title: String(result.title ?? '').slice(0, 300),
+      snippet: String(result.snippet).slice(0, 1500),
+    }))
 
 const LOAD_URL_MAX_RETRIES = 5
 const LOAD_URL_RETRY_DELAY = 100
@@ -790,12 +815,34 @@ export const NoraTab: React.FC<{
         // page's own "new tab" would put it in whichever profile was chosen last.
         const request = resolveAnonymousTabRequest(data?.url)
         if (request && anonymousActive(getHostFromUrl(pageUrlRef.current || tab.url))) {
-          tabs$.openTab(request.url, {
+          const searchTabId = tabs$.openTab(request.url, {
             parentTabId: tab.id,
             source: 'child',
             profile: tab.profile,
             profileMode: 'manual',
           })
+          if (searchTabId && request.searchUsername) {
+            registerSearchTab(searchTabId, tab.id, request.searchUsername)
+          }
+        }
+        break
+      }
+      case 'search-results': {
+        // What the search page found, from a tab this one opened for a profile: the posts go to the
+        // tab it was opened from, which carries on from them, and this one has done its job.
+        const pending = takeSearchTab(tab.id)
+        if (!pending || data?.username !== pending.username || !anonymousActive(getHostFromUrl(pageUrlRef.current || tab.url))) {
+          break
+        }
+        storeSearchResults(pending.username, sanitizeSearchResults(data.results))
+        const payload = await getMorePostsPage(pending.username, 0)
+        void executeWebviewJavaScriptQuietly(
+          getTabWebview(pending.parentTabId),
+          `window.Nora?.setMorePosts?.(${JSON.stringify({ ...payload, labels: getMorePostsLabels() })})`,
+        )
+        const searchTabIndex = tabs$.tabs.get().findIndex((currentTab) => currentTab?.id === tab.id)
+        if (searchTabIndex !== -1) {
+          tabs$.closeTab(searchTabIndex)
         }
         break
       }
@@ -815,20 +862,9 @@ export const NoraTab: React.FC<{
           break
         }
         const payload = await getMorePostsPage(data.username, page)
-        const labels = {
-          title: t('morePosts.title'),
-          loading: t('morePosts.loading'),
-          more: t('morePosts.more'),
-          openSearch: t('morePosts.openSearch'),
-          openPost: t('morePosts.openPost'),
-          note: t('morePosts.note'),
-          challenge: t('morePosts.challenge'),
-          error: t('morePosts.error'),
-          empty: t('morePosts.empty'),
-        }
         void executeWebviewJavaScriptQuietly(
           webviewRef.current || nativeRef.current,
-          `window.Nora?.setMorePosts?.(${JSON.stringify({ ...payload, labels })})`,
+          `window.Nora?.setMorePosts?.(${JSON.stringify({ ...payload, labels: getMorePostsLabels() })})`,
         )
         break
       }
