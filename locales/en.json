@@ -448,7 +448,9 @@
     "empty": "No more posts were found.",
     "continue": "Continue with search",
     "continueHint": "Carries on with this profile's public posts, found through DuckDuckGo, which sees the profile name.",
-    "searching": "Searching\u2026 If DuckDuckGo asks for a check, you will be taken to it and brought back here."
+    "searching": "Searching\u2026 If DuckDuckGo asks for a check, you will be taken to it and brought back here.",
+    "unavailable": "Instagram does not show this post here.",
+    "retry": "Try again"
   },
   "newTab": {
     "presets": {

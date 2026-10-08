@@ -1,5 +1,6 @@
 import { emit } from './utils'
 import { noraMorePostsEvent, noraSettingsEvent } from './nora'
+import { EMBED_AUTOMATIC_RETRIES, EMBED_LOAD_TIMEOUT_MS, clampEmbedHeight, isEmbedLoaded, parseEmbedMessage } from './embed-messages'
 
 const SCAN_DELAY_MS = 400
 const blockId = '_nora_more_posts'
@@ -20,6 +21,8 @@ export interface MorePostsLabels {
   continue: string
   continueHint: string
   searching: string
+  unavailable: string
+  retry: string
 }
 
 interface MorePostCard {
@@ -172,8 +175,85 @@ const createDivider = (label: string) => {
 const formatDate = (date: number) =>
   new Date(date).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' })
 
+interface EmbedCard {
+  frame: HTMLIFrameElement
+  wrapper: HTMLElement
+  url: string
+  labels: MorePostsLabels
+  attempts: number
+  loaded: boolean
+  timer: ReturnType<typeof setTimeout> | undefined
+}
+
 /** Shows the block below a profile and fills it with what the app finds. */
 export function initMorePosts() {
+  const embeds = new Set<EmbedCard>()
+  const pendingEmbeds = new WeakMap<HTMLIFrameElement, EmbedCard>()
+
+  /**
+   * Starts a post loading and waits for it to say it is on screen. Instagram sometimes does not
+   * show a post it showed a moment before, and a page that does not load never says so, so it is
+   * tried once more and then replaced by a note that can be tried again by hand.
+   */
+  const startEmbed = (embed: EmbedCard) => {
+    embed.loaded = false
+    clearTimeout(embed.timer)
+    embed.frame.src = embed.url
+    embed.timer = setTimeout(() => {
+      if (embed.loaded) {
+        return
+      }
+      if (embed.attempts < EMBED_AUTOMATIC_RETRIES) {
+        embed.attempts += 1
+        embed.frame.removeAttribute('src')
+        setTimeout(() => startEmbed(embed), 300)
+      } else {
+        showEmbedUnavailable(embed)
+      }
+    }, EMBED_LOAD_TIMEOUT_MS)
+  }
+
+  const showEmbedUnavailable = (embed: EmbedCard) => {
+    embed.frame.removeAttribute('src')
+    embed.frame.style.display = 'none'
+    // The link leads to the same page, which would not show the post either.
+    embed.wrapper.querySelector<HTMLElement>('[data-open-post]')?.style.setProperty('display', 'none')
+    embed.wrapper.querySelector('[data-embed-unavailable]')?.remove()
+    const note = create('div', `padding:20px 16px 4px;text-align:center;font-size:14px;line-height:18px;opacity:${MUTED_OPACITY};`, embed.labels.unavailable)
+    note.setAttribute('data-embed-unavailable', '1')
+    const retry = create('button', `${buttonCss}margin:12px auto 0;`, embed.labels.retry)
+    retry.type = 'button'
+    retry.addEventListener('click', () => {
+      note.remove()
+      embed.wrapper.querySelector<HTMLElement>('[data-open-post]')?.style.removeProperty('display')
+      embed.attempts = 0
+      embed.frame.style.display = 'block'
+      startEmbed(embed)
+    })
+    note.appendChild(retry)
+    embed.frame.insertAdjacentElement('afterend', note)
+  }
+
+  window.addEventListener('message', (event) => {
+    const message = parseEmbedMessage(event.data)
+    if (!message) {
+      return
+    }
+    for (const embed of embeds) {
+      if (embed.frame.contentWindow !== event.source) {
+        continue
+      }
+      if (message.type === 'MEASURE' && message.height) {
+        embed.frame.style.height = `${clampEmbedHeight(message.height)}px`
+      }
+      if (isEmbedLoaded(message)) {
+        embed.loaded = true
+        clearTimeout(embed.timer)
+      }
+      return
+    }
+  })
+
   let timer: ReturnType<typeof setTimeout> | undefined
   let current: { username: string; block: HTMLElement; gate: HTMLElement; page: number; loading: boolean } | null = null
   let observer: IntersectionObserver | undefined
@@ -186,6 +266,10 @@ export function initMorePosts() {
     current.gate.style.removeProperty('display')
     current.gate.removeAttribute(hiddenAttribute)
     current = null
+    for (const embed of embeds) {
+      clearTimeout(embed.timer)
+    }
+    embeds.clear()
     observer?.disconnect()
     observer = undefined
   }
@@ -271,15 +355,18 @@ export function initMorePosts() {
 
     // The picture comes from Instagram's own embed page, loaded only once the card is near the screen.
     const frame = create('iframe', 'display:block;width:100%;max-width:540px;height:560px;border:0;margin:10px auto 0;')
-    frame.setAttribute('data-src', card.embedUrl)
     frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups')
     frame.setAttribute('loading', 'lazy')
     wrapper.appendChild(frame)
+    const embed: EmbedCard = { frame, wrapper, url: card.embedUrl, labels, attempts: 0, loaded: false, timer: undefined }
+    embeds.add(embed)
+    pendingEmbeds.set(frame, embed)
     observer?.observe(frame)
 
     const open = create('a', `display:block;padding:10px 16px 0;font-size:14px;font-weight:600;line-height:18px;color:${INSTAGRAM_BLUE};text-decoration:none;`, labels.openPost)
     // The embed page, in this tab: it has the player, and going back lands on the profile.
     open.href = card.embedUrl
+    open.setAttribute('data-open-post', '1')
     wrapper.appendChild(open)
     return wrapper
   }
@@ -347,10 +434,11 @@ export function initMorePosts() {
       (entries) => {
         for (const entry of entries) {
           const frame = entry.target as HTMLIFrameElement
-          if (entry.isIntersecting && frame.dataset.src) {
-            frame.src = frame.dataset.src
-            frame.removeAttribute('data-src')
+          const embed = pendingEmbeds.get(frame)
+          if (entry.isIntersecting && embed) {
+            pendingEmbeds.delete(frame)
             observer?.unobserve(frame)
+            startEmbed(embed)
           }
         }
       },

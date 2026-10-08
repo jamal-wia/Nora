@@ -70,6 +70,8 @@ const getMorePostsLabels = () => ({
   continue: t('morePosts.continue'),
   continueHint: t('morePosts.continueHint'),
   searching: t('morePosts.searching'),
+  unavailable: t('morePosts.unavailable'),
+  retry: t('morePosts.retry'),
 })
 
 // A search runs out of sight in a tab of its own. If DuckDuckGo asks for a check, the person has to
