@@ -79,9 +79,9 @@ export function findPortalTarget<T extends { parentElement: T | null; tagName: s
 
 /**
  * A bar pinned to the top leaves a gap under it, because the page makes room for it with padding
- * on a container of its own. Once the bar is hidden that padding is the gap, so the nearest
- * ancestor padded by the bar's height, from the element that is now at the top downwards, is the
- * one to give it back. Null when no container is padded by about that much.
+ * on a container of its own. Once the bar is hidden that padding is the gap, so the ancestor of
+ * what is now at the top whose padding is closest to the bar's height is the one to give it back.
+ * Null when no container is padded by about that much.
  */
 export function findPaddedAncestor<T extends { parentElement: T | null; tagName: string }>(
   start: T | null,
@@ -93,14 +93,22 @@ export function findPaddedAncestor<T extends { parentElement: T | null; tagName:
   if (barHeight <= 0) {
     return null
   }
+  let best: T | null = null
+  let bestDistance = Infinity
   for (let node = start; node && node.tagName !== 'BODY' && node.tagName !== 'HTML'; node = node.parentElement) {
     const padding = paddingTopOf(node)
-    if (padding > 0 && Math.abs(padding - barHeight) <= tolerance) {
-      return node
+    const distance = Math.abs(padding - barHeight)
+    // Ties go to the outer one, which is where a page puts the room for a bar.
+    if (padding > 0 && distance <= tolerance && distance <= bestDistance) {
+      best = node
+      bestDistance = distance
     }
   }
-  return null
+  return best
 }
+
+/** The most text a prompt's container may hold: more than that is the page, and is not hidden. */
+export const OVERLAY_MAX_TEXT = 800
 
 const isFloating = (element: Element) => {
   const { position } = getComputedStyle(element)
@@ -108,6 +116,15 @@ const isFloating = (element: Element) => {
 }
 
 const isModeOn = () => Boolean(window.Nora?.getSettings?.().anonymousMode)
+
+/** What was hidden for a match, so that it can be given back when the match goes. */
+interface Handled {
+  selector: string
+  target: Element
+  locksScroll: boolean
+  unpadded?: Element
+  barHeight: number
+}
 
 /**
  * The script half of the mode, for prompts that can only be found by what is in
@@ -120,40 +137,80 @@ export function initAnonymousMode() {
     return () => {}
   }
 
-  const handled = new Set<Element>()
+  const handled = new Map<Element, Handled>()
+  // Matches that were looked at and are not prompts, so that they are not looked at again.
+  const rejected = new WeakSet<Element>()
   let timer: ReturnType<typeof setTimeout> | undefined
+
+  const release = (entry: Handled) => {
+    entry.target.removeAttribute(hiddenAttribute)
+    entry.unpadded?.removeAttribute(unpaddedAttribute)
+  }
+
+  const releaseAll = () => {
+    for (const entry of handled.values()) {
+      release(entry)
+    }
+    handled.clear()
+    document.documentElement.removeAttribute(promptAttribute)
+  }
+
+  const stillMatches = (match: Element, selector: string) => {
+    try {
+      return match.isConnected && match.matches(selector)
+    } catch {
+      return false
+    }
+  }
+
+  // The room a page made for a bar at the top is looked for again while the bar is hidden, since a
+  // page that redraws its container brings the padding back.
+  const giveBackRoom = (entry: Handled) => {
+    if (entry.barHeight <= 0 || (entry.unpadded?.isConnected && entry.unpadded.hasAttribute(unpaddedAttribute))) {
+      return
+    }
+    const padded = findPaddedAncestor(
+      document.elementFromPoint(window.innerWidth / 2, entry.barHeight + 4),
+      entry.barHeight,
+      (element) => parseFloat(getComputedStyle(element).paddingTop) || 0,
+    )
+    padded?.setAttribute(unpaddedAttribute, '1')
+    entry.unpadded = padded ?? undefined
+  }
 
   const scan = () => {
     timer = undefined
-    const root = document.documentElement
     if (!isModeOn()) {
-      handled.clear()
-      root.removeAttribute(promptAttribute)
+      releaseAll()
       return
     }
 
-    const hide = (selectors: string[], findTarget: (match: Element) => Element | null) => {
-      for (const selector of selectors) {
+    // What was hidden for a prompt that has gone is given back, whatever else shares its container.
+    for (const [match, entry] of handled) {
+      if (!stillMatches(match, entry.selector)) {
+        release(entry)
+        handled.delete(match)
+      }
+    }
+
+    const hide = (
+      rule: { selectors: string[]; locksScroll: boolean },
+      findTarget: (match: Element) => Element | null,
+    ) => {
+      for (const selector of rule.selectors) {
         try {
           for (const match of document.querySelectorAll(selector)) {
-            if (handled.has(match)) {
+            if (handled.has(match) || rejected.has(match)) {
               continue
             }
             const target = findTarget(match)
-            if (target) {
-              const { height, top } = target.getBoundingClientRect()
-              target.setAttribute(hiddenAttribute, '1')
-              handled.add(match)
-              // A bar at the top leaves its gap behind: the padding the page gave a container for it.
-              if (top <= 1 && height > 0) {
-                const padded = findPaddedAncestor(
-                  document.elementFromPoint(window.innerWidth / 2, height + 4),
-                  height,
-                  (element) => parseFloat(getComputedStyle(element).paddingTop) || 0,
-                )
-                padded?.setAttribute(unpaddedAttribute, '1')
-              }
+            if (!target) {
+              rejected.add(match)
+              continue
             }
+            const { height, top } = target.getBoundingClientRect()
+            target.setAttribute(hiddenAttribute, '1')
+            handled.set(match, { selector, target, locksScroll: rule.locksScroll, barHeight: top <= 1 ? height : 0 })
           }
         } catch {
           // A selector this engine does not understand, or a page in a state it cannot be
@@ -161,30 +218,28 @@ export function initAnonymousMode() {
         }
       }
     }
-    const rules = getAnonymousRules(hostname)
-    hide(
-      rules.flatMap((rule) => rule.overlays || []),
-      (match) => findOverlayTarget(match, isFloating),
-    )
-    // Clicked, not hidden: the page's own code is what must stop blocking the scroll.
-    hide(
-      rules.flatMap((rule) => rule.dismiss || []),
-      (match) => {
+
+    for (const rule of getAnonymousRules(hostname)) {
+      const locksScroll = Boolean(rule.locksScroll)
+      hide({ selectors: rule.overlays || [], locksScroll }, (match) => {
+        const target = findOverlayTarget(match, isFloating)
+        return target && (target.textContent?.length ?? 0) <= OVERLAY_MAX_TEXT ? target : null
+      })
+      // Clicked, not hidden: the page's own code is what must stop blocking the scroll.
+      hide({ selectors: rule.dismiss || [], locksScroll }, (match) => {
         ;(match as HTMLElement).click()
         return match
-      },
-    )
-    hide(
-      rules.flatMap((rule) => rule.portals || []),
-      (match) => findPortalTarget(match, (element) => element.textContent?.length ?? 0),
-    )
-
-    for (const match of handled) {
-      if (!match.isConnected) {
-        handled.delete(match)
-      }
+      })
+      hide({ selectors: rule.portals || [], locksScroll }, (match) =>
+        findPortalTarget(match, (element) => element.textContent?.length ?? 0),
+      )
     }
-    if (handled.size) {
+
+    for (const entry of handled.values()) {
+      giveBackRoom(entry)
+    }
+    const root = document.documentElement
+    if ([...handled.values()].some((entry) => entry.locksScroll)) {
       root.setAttribute(promptAttribute, '1')
     } else {
       root.removeAttribute(promptAttribute)
@@ -192,12 +247,18 @@ export function initAnonymousMode() {
   }
 
   const schedule = () => {
-    if (timer === undefined) {
+    // Pages of other profiles change all the time and have nothing to do here.
+    if (timer === undefined && (isModeOn() || handled.size)) {
       timer = setTimeout(scan, SCAN_DELAY_MS)
     }
   }
 
-  window.addEventListener(noraSettingsEvent, schedule)
+  // A change of the setting is always looked at: it is what turns the mode on or off.
+  window.addEventListener(noraSettingsEvent, () => {
+    if (timer === undefined) {
+      timer = setTimeout(scan, SCAN_DELAY_MS)
+    }
+  })
   schedule()
   return schedule
 }

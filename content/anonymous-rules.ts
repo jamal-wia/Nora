@@ -43,6 +43,12 @@ export interface AnonymousRule {
    * before the click and a close button that stops being found.
    */
   dismiss?: string[]
+  /**
+   * The prompt locks the page's own scrolling, and gives it back only if it is lifted by hand. Set
+   * for the rules that were seen doing so, and for no others: a lock a site sets for its own
+   * reasons, such as one under an open photo, is not to be undone.
+   */
+  locksScroll?: boolean
 }
 
 export const anonymousRules: AnonymousRule[] = [
@@ -55,13 +61,14 @@ export const anonymousRules: AnonymousRule[] = [
     ],
     // Hiding it is not enough here: while the sheet counts as open, the page cancels
     // every wheel and touch scroll. Seen 2026-10-08, same page.
-    dismiss: ['[data-interaction="app-store-obstruction"] button'],
+    dismiss: ['[data-interaction="app-store-obstruction"] button[aria-label="Dismiss"]'],
   },
   {
     // Seen 2026-10-08 on m.facebook.com, logged-out public page; the sheet also
     // locks scrolling on the body.
     hosts: ['facebook.com'],
     overlays: ['div[role="dialog"]:has(a[href*="/login"])'],
+    locksScroll: true,
   },
   {
     // Seen 2026-10-08 on a logged-out public profile, mobile layout: "See full
@@ -78,7 +85,10 @@ export const anonymousRules: AnonymousRule[] = [
     // no link or other stable hook, so it is told apart by being a modal made of
     // nothing but text and buttons.
     hosts: ['threads.com'],
-    portals: ['div[role="dialog"][aria-modal="true"]:not(:has(img, video, a, input, textarea))'],
+    // Left alone: anything with media, a link, a field, a frame (where a check lives), a form or an alert.
+    portals: [
+      'div[role="dialog"][aria-modal="true"]:not(:has(img, video, a, input, textarea, iframe, canvas, form, [role="alertdialog"]))',
+    ],
   },
   {
     // Seen 2026-10-08 on a logged-out blog, mobile layout: the bar pinned to the

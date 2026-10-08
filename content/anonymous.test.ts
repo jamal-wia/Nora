@@ -170,10 +170,30 @@ describe('findPaddedAncestor', () => {
     expect(findPaddedAncestor(chainOf({ tagName: 'BODY', padding: 0 }, { tagName: 'DIV', padding: 16 }), 60, paddingOf)).toBeNull()
   })
 
+  it('takes the container padded closest to the bar, and the outer one on a tie', () => {
+    const start = chainOf(
+      { tagName: 'BODY', padding: 0 },
+      { tagName: 'DIV', padding: 60 },
+      { tagName: 'DIV', padding: 50 },
+      { tagName: 'DIV', padding: 60 },
+      { tagName: 'HEADER', padding: 0 },
+    )
+    expect(findPaddedAncestor(start, 60, paddingOf)).toBe(start.parentElement!.parentElement!.parentElement)
+    const inner = chainOf({ tagName: 'BODY', padding: 0 }, { tagName: 'DIV', padding: 56 }, { tagName: 'DIV', padding: 64 })
+    expect(findPaddedAncestor(inner, 60, paddingOf)).toBe(inner.parentElement)
+  })
+
   it('never takes the body or the page, or acts without a bar', () => {
     expect(findPaddedAncestor(chainOf({ tagName: 'HTML', padding: 60 }, { tagName: 'BODY', padding: 60 }), 60, paddingOf)).toBeNull()
     expect(findPaddedAncestor(chainOf({ tagName: 'BODY', padding: 0 }, { tagName: 'DIV', padding: 0 }), 0, paddingOf)).toBeNull()
     expect(findPaddedAncestor(null, 60, paddingOf)).toBeNull()
+  })
+})
+
+describe('anonymousRules scroll locks', () => {
+  it('says so only for a rule that was seen locking the scroll', () => {
+    const locking = anonymousRules.filter((rule) => rule.locksScroll)
+    expect(locking.map((rule) => rule.hosts[0])).toEqual(['facebook.com'])
   })
 })
 
@@ -222,10 +242,14 @@ describe('anonymousRules', () => {
     expect(header(headerSelector).find('a[href="/nasa/"]')).toHaveLength(0)
 
     const threads = cheerio.load('<div role="dialog" aria-modal="true"><span>Thread on Threads</span><div role="button">Download</div></div>')
-    const threadsSelector = 'div[role="dialog"][aria-modal="true"]:not(:has(img, video, a, input, textarea))'
+    const threadsSelector = anonymousRules.find((rule) => rule.hosts[0] === 'threads.com')!.portals![0]
     expect(threads(threadsSelector)).toHaveLength(1)
-    const viewer = cheerio.load('<div role="dialog" aria-modal="true"><img src="a.jpg"></div>')
-    expect(viewer(threadsSelector)).toHaveLength(0)
+    for (const inside of ['<img src="a.jpg">', '<iframe src="https://example.com/check"></iframe>', '<form><input></form>', '<canvas></canvas>']) {
+      const other = cheerio.load(`<div role="dialog" aria-modal="true">${inside}</div>`)
+      expect(other(threadsSelector)).toHaveLength(0)
+    }
+    const alert = cheerio.load('<div role="dialog" aria-modal="true"><div role="alertdialog">Discard?</div></div>')
+    expect(alert(threadsSelector)).toHaveLength(0)
   })
 
   it('only dismisses prompts that it also hides, so a missing close button still leaves the prompt out of the way', () => {
