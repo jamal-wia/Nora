@@ -18,6 +18,7 @@ import { MaterialButton } from '../button/IconButtons'
 import MaterialIcons from '@react-native-vector-icons/material-icons'
 
 import { ProfileManager } from '../profile/ProfileManager'
+import { anonymousRules } from '@/content/anonymous-rules'
 import { BlocklistSection } from '../blocklist/BlocklistSection'
 import { xHomeTimelineValues } from '@/lib/settings/twitter'
 import {
@@ -743,6 +744,8 @@ export const SettingsAppearanceContent = () => {
   )
 }
 
+const anonymousSites = anonymousRules.flatMap((rule) => rule.hosts).join(', ')
+
 export const SettingsProfilesContent = () => {
   const settings = useValue(settings$)
 
@@ -762,6 +765,23 @@ export const SettingsProfilesContent = () => {
             }
             value={settings.oneProfilePerSite}
             onPress={() => settings$.oneProfilePerSite.toggle()}
+          />
+        </SettingsRow>
+      </SettingsSurface>
+      <NouText className={subheaderCls}>{t('settings.anonymous.title')}</NouText>
+      <SettingsSurface className="mb-10">
+        <SettingsRow isLast>
+          <NouSwitch
+            label={
+              <View>
+                <NouText>{t('settings.anonymous.enable')}</NouText>
+                <NouText className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                  {t('settings.anonymous.hint', { sites: anonymousSites })}
+                </NouText>
+              </View>
+            }
+            value={settings.anonymousMode}
+            onPress={() => settings$.setAnonymousMode(!settings.anonymousMode)}
           />
         </SettingsRow>
       </SettingsSurface>

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import * as cheerio from 'cheerio'
-import { findOverlayTarget, findPortalTarget, getAnonymousCss, getAnonymousRules } from './anonymous'
-import { anonymousRules, type AnonymousRule } from './anonymous-rules'
+import { findOverlayTarget, findPortalTarget, getAnonymousCss } from './anonymous'
+import { anonymousRules, getAnonymousRules, type AnonymousRule } from './anonymous-rules'
 
 const rules: AnonymousRule[] = [
   { hosts: ['example.com'], hide: ['.promo', '#banner'], overlays: ['div[role="dialog"]'] },

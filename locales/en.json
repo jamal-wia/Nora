@@ -84,6 +84,7 @@
   },
   "menus": {
     "blockAds": "Block ads on this site",
+    "hideSignInPrompts": "Hide sign-in prompts on this site",
     "clearSiteData": "Clear site data",
     "clearSiteDataConfirm": "Clear all cookies and site data for \"{{host}}\"? This signs you out of this site.",
     "close": "Close",
@@ -244,6 +245,11 @@
       "desktopLayoutAuto": "Auto",
       "desktopLayoutOn": "Always",
       "desktopLayoutOff": "Never"
+    },
+    "anonymous": {
+      "title": "Anonymous mode",
+      "enable": "Hide sign-in prompts",
+      "hint": "In the Anonymous profile, hides pop-ups and banners asking you to log in, sign up or open the app, and unlocks scrolling that a pop-up locked. It does not unlock posts that need an account. Only on sites it has rules for ({{sites}}) and only as long as those sites keep their layout. Tabs in your other profiles are never changed."
     },
     "profiles": {
       "description": "Multiple accounts with separate cookies and browsing state.",

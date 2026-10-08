@@ -1,3 +1,5 @@
+import { isBlocklistExcludedHost } from '../lib/blocklist/policy'
+
 /**
  * What the anonymous mode removes, per site. Sites change their markup often, so
  * this is plain data that is cheap to amend, and nothing in it can take a page
@@ -70,3 +72,7 @@ export const anonymousRules: AnonymousRule[] = [
     overlays: ['button[aria-label="Sign up"]'],
   },
 ]
+
+export function getAnonymousRules(host: string, rules: AnonymousRule[] = anonymousRules) {
+  return rules.filter((rule) => isBlocklistExcludedHost(host, rule.hosts))
+}

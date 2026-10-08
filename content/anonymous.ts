@@ -1,14 +1,9 @@
-import { isBlocklistExcludedHost } from '../lib/blocklist/policy'
-import { anonymousRules, type AnonymousRule } from './anonymous-rules'
+import { anonymousRules, getAnonymousRules, type AnonymousRule } from './anonymous-rules'
 import { noraSettingsEvent } from './nora'
 
 const hiddenAttribute = 'data-nora-anonymous-hidden'
 const promptAttribute = 'data-nora-anonymous-prompt'
 const SCAN_DELAY_MS = 250
-
-export function getAnonymousRules(host: string, rules: AnonymousRule[] = anonymousRules) {
-  return rules.filter((rule) => isBlocklistExcludedHost(host, rule.hosts))
-}
 
 /**
  * The style half of the mode. Every selector gets a rule of its own: a selector
@@ -119,7 +114,7 @@ export function initAnonymousMode() {
               handled.add(match)
             }
           }
-        } catch (e) {
+        } catch {
           // A selector this engine does not understand, or a page in a state it cannot be
           // queried in. The rest of the rules still run.
         }
