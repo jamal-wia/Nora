@@ -796,6 +796,8 @@ export const SettingsProfilesContent = () => {
               </View>
             }
             value={settings.anonymousMorePosts}
+            // Only ever acts in the Anonymous profile, with the mode on.
+            disabled={!settings.anonymousMode}
             onPress={() => settings$.anonymousMorePosts.toggle()}
           />
         </SettingsRow>

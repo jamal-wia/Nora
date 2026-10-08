@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'bun:test'
-import { settings$ } from './settings'
+import { getSettingsSnapshot, normalizeSettings, settings$ } from './settings'
 
 beforeEach(() => {
   settings$.profiles.set([{ id: 'default', name: 'Default', color: '#6366f1', isDefault: true }])
@@ -38,5 +38,23 @@ describe('anonymous mode per-site switch', () => {
 
     settings$.setAnonymousHostDisabled('old.reddit.com', false)
     expect(settings$.anonymousDisabledHosts.get()).toEqual([])
+  })
+})
+
+describe('Anonymous profile and the mode', () => {
+  it('is added to a backup that has the mode on and no such profile', () => {
+    const snapshot = getSettingsSnapshot({ anonymousMode: true, profiles: [{ id: 'default', name: 'Default', color: '#6366f1', isDefault: true }] })
+    expect(snapshot.profiles.map((profile) => profile.id)).toEqual(['default', 'anonymous'])
+  })
+
+  it('is not added when the mode is off, or twice', () => {
+    expect(getSettingsSnapshot({ anonymousMode: false }).profiles.some((profile) => profile.id === 'anonymous')).toBe(false)
+    const once = getSettingsSnapshot({ anonymousMode: true })
+    expect(getSettingsSnapshot(once).profiles.filter((profile) => profile.id === 'anonymous')).toHaveLength(1)
+  })
+
+  it('is added when settings are loaded with the mode on and no such profile', () => {
+    const loaded = normalizeSettings({ anonymousMode: true, profiles: [{ id: 'default', name: 'Default', color: '#000', isDefault: true }] } as any)
+    expect(loaded!.profiles!.some((profile: { id: string }) => profile.id === 'anonymous')).toBe(true)
   })
 })

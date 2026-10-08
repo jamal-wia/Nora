@@ -26,6 +26,16 @@ export interface Profile {
 const DEFAULT_PROFILE_ID = 'default'
 const DEFAULT_PROFILE: Profile = { id: DEFAULT_PROFILE_ID, name: 'Default', color: '#6366f1', isDefault: true }
 
+/**
+ * With the mode on, the profile it applies to has to be there: it is the only place it does
+ * anything, and a profile that was deleted, or a backup or a synced file that has the mode on and
+ * not the profile, would leave a switch that is on and has no effect.
+ */
+const withAnonymousProfile = (profiles: Profile[], anonymousMode: boolean) =>
+  anonymousMode && !profiles.some((profile) => profile.id === ANONYMOUS_PROFILE_ID)
+    ? [...profiles, { id: ANONYMOUS_PROFILE_ID, name: ANONYMOUS_PROFILE_NAME, color: ANONYMOUS_PROFILE_COLOR }]
+    : profiles
+
 const ensureProfiles = (profiles?: (Profile | null | undefined)[]) => {
   const sanitized = (profiles || []).filter((p): p is Profile => p != null)
   const defaultProfile = sanitized.find((p) => p.id === DEFAULT_PROFILE_ID)
@@ -208,7 +218,7 @@ export const getSettingsSnapshot = (value: Partial<Store> | undefined = settings
     selectedSearchProviderId: normalizeSelectedSearchProviderId(value?.selectedSearchProviderId, enabledSearchProviderIds),
     selectedPublicSearchServiceId: normalizePublicSearchServiceId(value?.selectedPublicSearchServiceId),
     customSearchProviders,
-    profiles: sanitizeProfiles(value?.profiles),
+    profiles: withAnonymousProfile(sanitizeProfiles(value?.profiles), bool(value?.anonymousMode)),
   }
 }
 
@@ -218,7 +228,7 @@ export const normalizeSettings = <T extends Partial<Settings> | undefined>(data:
   }
 
   if ('profiles' in data) {
-    data.profiles = ensureProfiles(data.profiles)
+    data.profiles = withAnonymousProfile(ensureProfiles(data.profiles), data.anonymousMode === true)
   }
   data.customSearchProviders = normalizeCustomSearchProviders(data.customSearchProviders)
   data.enabledSearchProviderIds = normalizeEnabledSearchProviderIds(
