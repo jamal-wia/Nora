@@ -246,3 +246,26 @@ export async function fetchProfilePosts(
   }
   return { status: 'ok', posts: continuePosts(posts, shownShortcodes) }
 }
+
+/** How many posts of a profile Instagram shows without an account, and so how many of the newest results are left out. */
+export const POSTS_SHOWN_WITHOUT_LOGIN = 12
+export const POSTS_PER_PAGE = 12
+
+/**
+ * Instagram's own embed page for a post, which is how other sites show one with its
+ * picture. Null for an address that is not a post of Instagram.
+ */
+export function toEmbedUrl(post: Pick<PublicPost, 'url'>) {
+  try {
+    const url = new URL(post.url)
+    const path = url.pathname.split('/').filter(Boolean)
+    const kindIndex = path.findIndex((part) => part === 'p' || part === 'reel')
+    const shortcode = path[kindIndex + 1]
+    if (kindIndex === -1 || !shortcode || !/(^|\.)instagram\.com$/.test(url.hostname)) {
+      return null
+    }
+    return `https://www.instagram.com/${path[kindIndex]}/${encodeURIComponent(shortcode)}/embed/`
+  } catch {
+    return null
+  }
+}
