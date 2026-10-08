@@ -12,14 +12,14 @@ const reservedPaths = new Set([
 
 export interface MorePostsLabels {
   title: string
-  loading: string
   more: string
-  openSearch: string
   openPost: string
   note: string
-  challenge: string
   error: string
   empty: string
+  continue: string
+  continueHint: string
+  searching: string
 }
 
 interface MorePostCard {
@@ -34,7 +34,7 @@ interface MorePostCard {
 interface MorePostsPayload {
   username: string
   page: number
-  status: 'ok' | 'challenge' | 'error'
+  status: 'idle' | 'ok' | 'error'
   posts: MorePostCard[]
   hasMore: boolean
   searchUrl: string | null
@@ -199,7 +199,7 @@ export function initMorePosts() {
     emit('load-more-posts', { username: current.username, page })
   }
 
-  const renderStatus = (block: HTMLElement, text: string | null, searchUrl?: string | null, labels?: MorePostsLabels) => {
+  const renderStatus = (block: HTMLElement, text: string | null) => {
     block.querySelector('[data-more-status]')?.remove()
     const status = create('div', 'padding:20px 16px;text-align:center;font-size:14px;line-height:18px;')
     status.setAttribute('data-more-status', '1')
@@ -208,12 +208,34 @@ export function initMorePosts() {
     } else {
       status.appendChild(create('div', `opacity:${MUTED_OPACITY};`, text))
     }
-    if (searchUrl && labels) {
-      const button = create('button', buttonCss, labels.openSearch)
-      button.type = 'button'
-      button.addEventListener('click', () => emit('open-anonymous-tab', { url: searchUrl }))
-      status.appendChild(button)
+    block.appendChild(status)
+  }
+
+  /**
+   * What the list starts as: one button that says what it does -- carry on with this profile's
+   * posts, found through a search -- and a line on who sees the name. Nothing is looked up until
+   * it is pressed.
+   */
+  const renderContinue = (block: HTMLElement, payload: MorePostsPayload, message?: string) => {
+    block.querySelector('[data-more-status]')?.remove()
+    block.querySelector('[data-more-title]')?.remove()
+    const status = create('div', 'padding:16px 16px 20px;text-align:center;font-size:14px;line-height:18px;')
+    status.setAttribute('data-more-status', '1')
+    if (message) {
+      status.appendChild(create('div', `margin-bottom:12px;opacity:${MUTED_OPACITY};`, message))
     }
+    const button = create('button', `${buttonCss}margin:0 auto;`, payload.labels.continue)
+    button.type = 'button'
+    button.addEventListener('click', () => {
+      if (!payload.searchUrl) {
+        return
+      }
+      renderStatus(block, null)
+      block.querySelector('[data-more-status]')?.appendChild(create('div', `margin-top:10px;font-size:12px;opacity:${MUTED_OPACITY};`, payload.labels.searching))
+      emit('open-anonymous-tab', { url: payload.searchUrl })
+    })
+    status.appendChild(button)
+    status.appendChild(create('div', `margin-top:10px;font-size:12px;line-height:16px;opacity:${MUTED_OPACITY};`, payload.labels.continueHint))
     block.appendChild(status)
   }
 
@@ -271,17 +293,12 @@ export function initMorePosts() {
     const { block } = current
     block.querySelector('[data-more-status]')?.remove()
     block.querySelector('[data-more-button]')?.remove()
+    if (payload.status === 'idle' || payload.status === 'error') {
+      renderContinue(block, payload, payload.status === 'error' ? payload.labels.error : undefined)
+      return
+    }
     if (!block.querySelector('[data-more-divider]')) {
       block.insertBefore(createDivider(payload.labels.title), block.firstChild)
-    }
-
-    if (payload.status === 'challenge') {
-      renderStatus(block, payload.labels.challenge, payload.searchUrl, payload.labels)
-      return
-    }
-    if (payload.status === 'error') {
-      renderStatus(block, payload.labels.error, payload.searchUrl, payload.labels)
-      return
     }
     for (const card of payload.posts) {
       block.appendChild(renderCard(card, payload.labels))

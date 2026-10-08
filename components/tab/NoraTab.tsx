@@ -56,23 +56,36 @@ import {
 } from '@/lib/blocklist'
 import { blocklist$ } from '@/states/blocklist'
 import { buildAnonymousModeScript, isAnonymousModeActive, isAnonymousProfile } from '@/lib/anonymous'
-import { getMorePostsPage, registerSearchTab, storeSearchResults, takeSearchTab } from '@/lib/more-posts'
+import { getMorePostsPage, peekSearchTab, registerSearchTab, storeSearchResults, takeSearchTab } from '@/lib/more-posts'
 import { resolveAnonymousTabRequest } from '@/lib/anonymous-tab'
 import { twColor, useTwColor } from '@/lib/theme'
 
 const getMorePostsLabels = () => ({
   title: t('morePosts.title'),
-  loading: t('morePosts.loading'),
   more: t('morePosts.more'),
-  openSearch: t('morePosts.openSearch'),
   openPost: t('morePosts.openPost'),
   note: t('morePosts.note'),
-  challenge: t('morePosts.challenge'),
   error: t('morePosts.error'),
   empty: t('morePosts.empty'),
+  continue: t('morePosts.continue'),
+  continueHint: t('morePosts.continueHint'),
+  searching: t('morePosts.searching'),
 })
 
+// A search runs out of sight in a tab of its own. If DuckDuckGo asks for a check, the person has to
+// see the page to pass it, so the tab is brought forward after this long without results; and
+// the search is given up on after the longer one.
+const SEARCH_CHECK_AFTER_MS = 8_000
+const SEARCH_GIVE_UP_AFTER_MS = 120_000
+
 // What a search page reports is a page's word, and is cut down to what the list is made from.
+const closeTabById = (tabId: string) => {
+  const index = tabs$.tabs.get().findIndex((currentTab) => currentTab?.id === tabId)
+  if (index !== -1) {
+    tabs$.closeTab(index)
+  }
+}
+
 const MAX_SEARCH_RESULTS = 60
 const sanitizeSearchResults = (value: unknown) =>
   (Array.isArray(value) ? value : [])
@@ -811,18 +824,37 @@ export const NoraTab: React.FC<{
         getCurrentWebview()?.saveFile(data.content, data.fileName, data.mimeType)
         break
       case 'open-anonymous-tab': {
-        // A search page, opened as a tab of its own in the profile of this one. The
-        // page's own "new tab" would put it in whichever profile was chosen last.
+        // The search page for a profile's posts, opened out of sight in a tab of the profile of
+        // this one. It reports back, and this tab gets the posts.
         const request = resolveAnonymousTabRequest(data?.url)
-        if (request && anonymousActive(getHostFromUrl(pageUrlRef.current || tab.url))) {
+        if (request?.searchUsername && anonymousActive(getHostFromUrl(pageUrlRef.current || tab.url))) {
           const searchTabId = tabs$.openTab(request.url, {
             parentTabId: tab.id,
             source: 'child',
             profile: tab.profile,
             profileMode: 'manual',
+            background: true,
           })
-          if (searchTabId && request.searchUsername) {
+          if (searchTabId) {
             registerSearchTab(searchTabId, tab.id, request.searchUsername)
+            const parentTabId = tab.id
+            setTimeout(() => {
+              if (peekSearchTab(searchTabId)) {
+                tabs$.setActiveTabById(searchTabId, 'system')
+              }
+            }, SEARCH_CHECK_AFTER_MS)
+            setTimeout(() => {
+              const pending = takeSearchTab(searchTabId)
+              if (!pending) {
+                return
+              }
+              closeTabById(searchTabId)
+              tabs$.setActiveTabById(parentTabId, 'system')
+              void executeWebviewJavaScriptQuietly(
+                getTabWebview(parentTabId),
+                `window.Nora?.setMorePosts?.(${JSON.stringify({ ...getMorePostsPage(pending.username, 0), status: 'error', labels: getMorePostsLabels() })})`,
+              )
+            }, SEARCH_GIVE_UP_AFTER_MS)
           }
         }
         break
@@ -835,15 +867,12 @@ export const NoraTab: React.FC<{
           break
         }
         storeSearchResults(pending.username, sanitizeSearchResults(data.results))
-        const payload = await getMorePostsPage(pending.username, 0)
+        tabs$.setActiveTabById(pending.parentTabId, 'system')
+        closeTabById(tab.id)
         void executeWebviewJavaScriptQuietly(
           getTabWebview(pending.parentTabId),
-          `window.Nora?.setMorePosts?.(${JSON.stringify({ ...payload, labels: getMorePostsLabels() })})`,
+          `window.Nora?.setMorePosts?.(${JSON.stringify({ ...getMorePostsPage(pending.username, 0), labels: getMorePostsLabels() })})`,
         )
-        const searchTabIndex = tabs$.tabs.get().findIndex((currentTab) => currentTab?.id === tab.id)
-        if (searchTabIndex !== -1) {
-          tabs$.closeTab(searchTabIndex)
-        }
         break
       }
       case 'load-more-posts': {
@@ -861,7 +890,7 @@ export const NoraTab: React.FC<{
         ) {
           break
         }
-        const payload = await getMorePostsPage(data.username, page)
+        const payload = getMorePostsPage(data.username, page)
         void executeWebviewJavaScriptQuietly(
           webviewRef.current || nativeRef.current,
           `window.Nora?.setMorePosts?.(${JSON.stringify({ ...payload, labels: getMorePostsLabels() })})`,

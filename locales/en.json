@@ -251,7 +251,7 @@
       "enable": "Hide sign-in prompts",
       "hint": "In the Anonymous profile, hides pop-ups and banners asking you to log in, sign up or open the app, and unlocks scrolling that a pop-up locked. It does not unlock posts that need an account. Only on sites it has rules for ({{sites}}) and only as long as those sites keep their layout. Tabs in your other profiles are never changed.",
       "morePosts": "Find more posts through search",
-      "morePostsHint": "On an Instagram profile in the Anonymous profile, replaces the sign-up banner at the bottom with more of the profile's public posts, found through DuckDuckGo, which sees the profile name. Only what the search engine has indexed turns up, so posts can be missing, and the first twelve results are left out because the profile already shows about that many."
+      "morePostsHint": "On an Instagram profile in the Anonymous profile, replaces the sign-up banner at the bottom with a Continue with search button. Pressing it looks for more of the profile's public posts through DuckDuckGo, which sees the profile name; nothing is sent before that. Only what the search engine has indexed turns up, so posts can be missing, and the first twelve results are left out because the profile already shows about that many."
     },
     "profiles": {
       "description": "Multiple accounts with separate cookies and browsing state.",
@@ -441,14 +441,14 @@
   },
   "morePosts": {
     "title": "More posts via search",
-    "loading": "Looking for more posts…",
     "more": "Show more",
-    "openSearch": "Open the search",
     "openPost": "Open post",
     "note": "Found through DuckDuckGo search, so some posts may be missing. The newest posts are the ones shown above.",
-    "challenge": "DuckDuckGo wants to check that you are a person. Open the search, pass the check there, and the posts will be added here.",
     "error": "Could not load more posts.",
-    "empty": "No more posts were found."
+    "empty": "No more posts were found.",
+    "continue": "Continue with search",
+    "continueHint": "Carries on with this profile's public posts, found through DuckDuckGo, which sees the profile name.",
+    "searching": "Searching\u2026 If DuckDuckGo asks for a check, you will be taken to it and brought back here."
   },
   "newTab": {
     "presets": {
