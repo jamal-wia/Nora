@@ -3,6 +3,7 @@ import { noraSettingsEvent } from './nora'
 
 const hiddenAttribute = 'data-nora-anonymous-hidden'
 const promptAttribute = 'data-nora-anonymous-prompt'
+const unpaddedAttribute = 'data-nora-anonymous-unpadded'
 const SCAN_DELAY_MS = 250
 
 /**
@@ -23,6 +24,8 @@ export function getAnonymousCss(host: string, enabled: boolean, rules: Anonymous
   return [
     ...hidden,
     `[${hiddenAttribute}] { display: none !important; }`,
+    // The room a hidden bar had been given at the top.
+    `[${unpaddedAttribute}] { padding-top: 0 !important; }`,
     // A sheet that locked the page's scrolling leaves it locked once it is hidden.
     // Only while one has been hidden, so a lock the site sets for its own reasons
     // is not undone on pages that never showed a prompt.
@@ -74,6 +77,31 @@ export function findPortalTarget<T extends { parentElement: T | null; tagName: s
   return textLength(top) <= textLength(match) + PORTAL_TEXT_MARGIN ? top : null
 }
 
+/**
+ * A bar pinned to the top leaves a gap under it, because the page makes room for it with padding
+ * on a container of its own. Once the bar is hidden that padding is the gap, so the nearest
+ * ancestor padded by the bar's height, from the element that is now at the top downwards, is the
+ * one to give it back. Null when no container is padded by about that much.
+ */
+export function findPaddedAncestor<T extends { parentElement: T | null; tagName: string }>(
+  start: T | null,
+  barHeight: number,
+  paddingTopOf: (element: T) => number,
+  // A page rounds the room it makes to its own scale and the bar can carry a border, so the two differ by a little.
+  tolerance = 8,
+) {
+  if (barHeight <= 0) {
+    return null
+  }
+  for (let node = start; node && node.tagName !== 'BODY' && node.tagName !== 'HTML'; node = node.parentElement) {
+    const padding = paddingTopOf(node)
+    if (padding > 0 && Math.abs(padding - barHeight) <= tolerance) {
+      return node
+    }
+  }
+  return null
+}
+
 const isFloating = (element: Element) => {
   const { position } = getComputedStyle(element)
   return position === 'fixed' || position === 'sticky'
@@ -113,8 +141,18 @@ export function initAnonymousMode() {
             }
             const target = findTarget(match)
             if (target) {
+              const { height, top } = target.getBoundingClientRect()
               target.setAttribute(hiddenAttribute, '1')
               handled.add(match)
+              // A bar at the top leaves its gap behind: the padding the page gave a container for it.
+              if (top <= 1 && height > 0) {
+                const padded = findPaddedAncestor(
+                  document.elementFromPoint(window.innerWidth / 2, height + 4),
+                  height,
+                  (element) => parseFloat(getComputedStyle(element).paddingTop) || 0,
+                )
+                padded?.setAttribute(unpaddedAttribute, '1')
+              }
             }
           }
         } catch {

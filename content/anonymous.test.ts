@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import * as cheerio from 'cheerio'
-import { findOverlayTarget, findPortalTarget, getAnonymousCss } from './anonymous'
+import { findOverlayTarget, findPortalTarget, findPaddedAncestor, getAnonymousCss } from './anonymous'
 import { anonymousRules, getAnonymousRules, type AnonymousRule } from './anonymous-rules'
 
 const rules: AnonymousRule[] = [
@@ -50,6 +50,7 @@ describe('getAnonymousCss', () => {
 
   it('hides what the script marked and unlocks scrolling only after it marked something', () => {
     const css = getAnonymousCss('example.com', true, rules)
+    expect(css).toContain('[data-nora-anonymous-unpadded] { padding-top: 0 !important; }')
     expect(css).toContain('[data-nora-anonymous-hidden] { display: none !important; }')
     expect(css).toContain('html[data-nora-anonymous-prompt] { overflow: auto !important; }')
     expect(css).toContain('html[data-nora-anonymous-prompt] body { overflow: visible !important; }')
@@ -135,6 +136,47 @@ describe('findPortalTarget', () => {
   })
 })
 
+describe('findPaddedAncestor', () => {
+  interface Box {
+    tagName: string
+    parentElement: Box | null
+    padding: number
+  }
+  const chainOf = (...boxes: Omit<Box, 'parentElement'>[]) => {
+    let node: Box | null = null
+    for (const box of boxes) {
+      node = { ...box, parentElement: node }
+    }
+    return node as Box
+  }
+  const paddingOf = (box: Box) => box.padding
+
+  it('is the nearest container padded by the height of the bar that was hidden', () => {
+    const start = chainOf(
+      { tagName: 'BODY', padding: 0 },
+      { tagName: 'DIV', padding: 60 },
+      { tagName: 'DIV', padding: 0 },
+      { tagName: 'HEADER', padding: 0 },
+    )
+    expect(findPaddedAncestor(start, 60, paddingOf)).toBe(start.parentElement!.parentElement)
+  })
+
+  it('allows for a few pixels between the bar and the room made for it', () => {
+    expect(findPaddedAncestor(chainOf({ tagName: 'BODY', padding: 0 }, { tagName: 'DIV', padding: 60 }), 64, paddingOf)).not.toBeNull()
+    expect(findPaddedAncestor(chainOf({ tagName: 'BODY', padding: 0 }, { tagName: 'DIV', padding: 40 }), 64, paddingOf)).toBeNull()
+  })
+
+  it('is nothing when no container is padded by that much', () => {
+    expect(findPaddedAncestor(chainOf({ tagName: 'BODY', padding: 0 }, { tagName: 'DIV', padding: 16 }), 60, paddingOf)).toBeNull()
+  })
+
+  it('never takes the body or the page, or acts without a bar', () => {
+    expect(findPaddedAncestor(chainOf({ tagName: 'HTML', padding: 60 }, { tagName: 'BODY', padding: 60 }), 60, paddingOf)).toBeNull()
+    expect(findPaddedAncestor(chainOf({ tagName: 'BODY', padding: 0 }, { tagName: 'DIV', padding: 0 }), 0, paddingOf)).toBeNull()
+    expect(findPaddedAncestor(null, 60, paddingOf)).toBeNull()
+  })
+})
+
 describe('anonymousRules', () => {
   const selectors = anonymousRules.flatMap((rule) => [
     ...(rule.hide || []),
@@ -171,6 +213,13 @@ describe('anonymousRules', () => {
 
     const instagram = cheerio.load('<div role="dialog"><a href="intent://instagram.com/_u/nasa">Open</a></div>')
     expect(instagram('div[role="dialog"]:has(a[href^="intent://"])')).toHaveLength(1)
+
+    const header = cheerio.load(
+      '<header><a href="/accounts/login/?next=%2F">Log in</a><a href="intent://instagram.com/_u/nasa#Intent;end">Open app</a></header><header><a href="/nasa/">avatar</a></header>',
+    )
+    const headerSelector = 'header:has(a[href^="/accounts/login"]):has(a[href^="intent://"])'
+    expect(header(headerSelector)).toHaveLength(1)
+    expect(header(headerSelector).find('a[href="/nasa/"]')).toHaveLength(0)
 
     const threads = cheerio.load('<div role="dialog" aria-modal="true"><span>Thread on Threads</span><div role="button">Download</div></div>')
     const threadsSelector = 'div[role="dialog"][aria-modal="true"]:not(:has(img, video, a, input, textarea))'

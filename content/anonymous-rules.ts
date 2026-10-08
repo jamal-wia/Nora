@@ -67,7 +67,11 @@ export const anonymousRules: AnonymousRule[] = [
     // Seen 2026-10-08 on a logged-out public profile, mobile layout: "See full
     // profile in the app".
     hosts: ['instagram.com'],
-    overlays: ['div[role="dialog"]:has(a[href^="intent://"])'],
+    overlays: [
+      'div[role="dialog"]:has(a[href^="intent://"])',
+      // The bar pinned to the top, with "Log in" and "Open app": the one header that holds both.
+      'header:has(a[href^="/accounts/login"]):has(a[href^="intent://"])',
+    ],
   },
   {
     // Seen 2026-10-08 on a logged-out public profile, mobile layout. The sheet has
