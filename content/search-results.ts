@@ -1,3 +1,4 @@
+import { noraSettingsEvent } from './nora'
 import { getSearchPageUsername, isChallengePage, parseSearchResults, type SearchResult } from '../lib/public-posts'
 
 const STORAGE_KEY = '__nora_posts_search'
@@ -41,14 +42,18 @@ export function initSearchResultsReporter(emit: (type: string, data: unknown) =>
     return
   }
 
+  let handled = false
   const run = () => {
-    if (!window.Nora?.getSettings?.().anonymousMode) {
+    // The app's word that the mode is on reaches a page that has only just opened after the page
+    // has loaded, so this is tried again when it arrives, and acts once.
+    if (handled || !window.Nora?.getSettings?.().anonymousMode || document.readyState === 'loading') {
       return
     }
     const html = document.documentElement.outerHTML
     if (isChallengePage(html)) {
       return
     }
+    handled = true
 
     // The address of a search for a profile starts one; the pages after it have none to read.
     const started = getSearchPageUsername(document.location.href)
@@ -70,9 +75,7 @@ export function initSearchResultsReporter(emit: (type: string, data: unknown) =>
     emit('search-results', { username: state.username, results: state.results })
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', run, { once: true })
-  } else {
-    run()
-  }
+  window.addEventListener(noraSettingsEvent, run)
+  document.addEventListener('DOMContentLoaded', run, { once: true })
+  run()
 }
