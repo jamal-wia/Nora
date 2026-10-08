@@ -786,7 +786,7 @@ export const NoraTab: React.FC<{
         getCurrentWebview()?.saveFile(data.content, data.fileName, data.mimeType)
         break
       case 'open-anonymous-tab': {
-        // A post or a search page, opened as a tab of its own in the profile of this one. The
+        // A search page, opened as a tab of its own in the profile of this one. The
         // page's own "new tab" would put it in whichever profile was chosen last.
         const request = resolveAnonymousTabRequest(data?.url)
         if (request && anonymousActive(getHostFromUrl(pageUrlRef.current || tab.url))) {
@@ -795,7 +795,6 @@ export const NoraTab: React.FC<{
             source: 'child',
             profile: tab.profile,
             profileMode: 'manual',
-            desktopMode: request.desktopMode,
           })
         }
         break

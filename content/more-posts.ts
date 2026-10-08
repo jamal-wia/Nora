@@ -239,11 +239,8 @@ export function initMorePosts() {
     observer?.observe(frame)
 
     const open = create('a', `display:block;padding:10px 16px 0;font-size:14px;font-weight:600;line-height:18px;color:${INSTAGRAM_BLUE};text-decoration:none;`, labels.openPost)
-    open.href = card.url
-    open.addEventListener('click', (event) => {
-      event.preventDefault()
-      emit('open-anonymous-tab', { url: card.url })
-    })
+    // The embed page, in this tab: it has the player, and going back lands on the profile.
+    open.href = card.embedUrl
     wrapper.appendChild(open)
     return wrapper
   }

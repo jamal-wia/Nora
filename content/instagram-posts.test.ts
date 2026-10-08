@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { getEmbedUrlForPage, getMediaId, getPostUrl, isProfileGridPage, isWatchAgainLink, toShortcode } from './instagram-posts'
+import { getEmbedUrlForPage, getMediaId, getPostEmbedUrl, getPostUrl, isProfileGridPage, isWatchAgainLink, toShortcode } from './instagram-posts'
 
 const picture = (key: string) =>
   `https://instagram.fcai20-1.fna.fbcdn.net/v/t51.82787-15/1.jpg?stp=dst-jpg&ig_cache_key=${encodeURIComponent(key)}&_nc_ohc=x`
@@ -42,6 +42,16 @@ describe('getPostUrl', () => {
 
   it('is null for a picture of nothing in particular', () => {
     expect(getPostUrl('https://example.com/a.jpg')).toBeNull()
+  })
+})
+
+describe('getPostEmbedUrl', () => {
+  it('is the embed page of the post a picture belongs to', () => {
+    expect(getPostEmbedUrl(picture('NDAwMjE0NzA1MDA1Nzc3MTYwMw==.3-ccb7-5'))).toBe('https://www.instagram.com/p/DeKe4mpkipT/embed/')
+  })
+
+  it('is null for a picture of nothing in particular', () => {
+    expect(getPostEmbedUrl('https://example.com/a.jpg')).toBeNull()
   })
 })
 

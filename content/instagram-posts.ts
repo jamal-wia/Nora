@@ -1,4 +1,3 @@
-import { emit } from './utils'
 import { getProfileUsername } from './more-posts'
 
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
@@ -42,6 +41,12 @@ export function toShortcode(mediaId: string) {
   return code || null
 }
 
+/** The embed page of the post that a picture on a profile belongs to, or null. */
+export function getPostEmbedUrl(src: string) {
+  const url = getPostUrl(src)
+  return url ? getEmbedUrlForPage('www.instagram.com', new URL(url).pathname) : null
+}
+
 /** The address of the post that a picture on a profile belongs to, or null. */
 export function getPostUrl(src: string) {
   const id = getMediaId(src)
@@ -76,7 +81,7 @@ export const isProfileGridPage = (hostname: string, pathname: string) =>
 /**
  * A visitor without an account gets a grid whose tiles are pictures with no link, and
  * a tap on one goes to a page asking for the app. The post is known all the same, from
- * the picture's address, so a tap opens it in a tab of this browser, as a tap on a link would.
+ * the picture's address, so a tap opens it in this tab, as a tap on a link would.
  */
 export function initInstagramPostOpener() {
   if (!/(^|\.)instagram\.com$/.test(document.location.hostname)) {
@@ -126,12 +131,12 @@ export function initInstagramPostOpener() {
       // a link around the picture is no reason to leave it alone. Only a picture of a post under
       // the finger is taken over; everything else keeps doing what the page made it do.
       for (const element of document.elementsFromPoint(event.clientX, event.clientY)) {
-        const url = element instanceof HTMLImageElement ? getPostUrl(element.currentSrc || element.src) : null
+        const url = element instanceof HTMLImageElement ? getPostEmbedUrl(element.currentSrc || element.src) : null
         if (url) {
           event.preventDefault()
           event.stopImmediatePropagation()
-          // The app opens it as the desktop site, which is where the player is.
-          emit('open-anonymous-tab', { url })
+          // In this tab, on the page that has the player, so that going back lands on the profile.
+          document.location.assign(url)
           return
         }
       }
