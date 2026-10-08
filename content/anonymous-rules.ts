@@ -43,8 +43,10 @@ export const anonymousRules: AnonymousRule[] = [
     // Seen 2026-10-08 on a logged-out public profile, mobile layout: "See full
     // profile in the app".
     hosts: ['instagram.com'],
-    // Embed pages only (readable class names): the "View more on Instagram" row, which leads to a page asking for the app. Seen 2026-10-09.
-    hide: ['.PrimaryCTA'],
+    // Embed pages only (readable class names), seen 2026-10-09: the "View more on Instagram" row, which leads to a page
+    // asking for the app, the footer with the comment field (commenting needs an account) and the logo link, and the
+    // hover card's root, a white link to the profile that lies over the bottom of the picture on a phone.
+    hide: ['.PrimaryCTA', '.Footer', '.HoverCardRoot'],
     overlays: [
       'div[role="dialog"]:has(a[href^="intent://"])',
       // The top bar with "Log in" and "Open app".

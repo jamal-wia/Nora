@@ -220,11 +220,17 @@ describe('anonymousRules', () => {
     }
   })
 
-  it('hides the View more row of an embed page, and nothing else of the site by that class', () => {
-    const embed = cheerio.load('<div class="HoverCard"><div class="PrimaryCTA"><a href="/artefr/">View more on Instagram</a></div></div>')
+  it('hides the View more row and the comment footer of an embed page, and nothing else of the site by those classes', () => {
+    const embed = cheerio.load(
+      '<div class="HoverCard"><div class="PrimaryCTA"><a href="/artefr/">View more on Instagram</a></div></div><div class="Footer"><a class="CommentInput">Add a comment...</a></div>',
+    )
     expect(embed('.PrimaryCTA')).toHaveLength(1)
-    expect(getAnonymousCss('www.instagram.com', true)).toContain('.PrimaryCTA { display: none !important; }')
-    expect(getAnonymousCss('www.x.com', true)).not.toContain('.PrimaryCTA')
+    expect(embed('.Footer .CommentInput')).toHaveLength(1)
+    const css = getAnonymousCss('www.instagram.com', true)
+    expect(css).toContain('.PrimaryCTA { display: none !important; }')
+    expect(css).toContain('.Footer { display: none !important; }')
+    expect(css).toContain('.HoverCardRoot { display: none !important; }')
+    expect(getAnonymousCss('www.x.com', true)).not.toContain('.Footer')
   })
 
   it('has selectors that parse', () => {
