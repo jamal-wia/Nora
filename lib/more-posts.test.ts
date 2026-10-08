@@ -1,27 +1,21 @@
 import { beforeEach, describe, expect, it } from 'bun:test'
-import { clearMorePostsCache, getMorePostsPage, registerSearchTab, storeSearchResults, takeSearchTab } from './more-posts'
-import { POSTS_PER_PAGE, POSTS_SHOWN_WITHOUT_LOGIN, toEmbedUrl, type PublicPost, type PublicPostsResult } from './public-posts'
+import {
+  clearMorePostsCache,
+  getMorePostsPage,
+  peekSearchTab,
+  registerSearchTab,
+  storeSearchResults,
+  takeSearchTab,
+} from './more-posts'
+import { POSTS_PER_PAGE, POSTS_SHOWN_WITHOUT_LOGIN, toEmbedUrl } from './public-posts'
 
-const posts = (count: number): PublicPost[] =>
-  Array.from({ length: count }, (_, index) => ({
-    url: `https://www.instagram.com/nasa/p/code${index}/`,
-    shortcode: `code${index}`,
-    date: 1_000_000 - index,
-    likes: '1K',
-    comments: '2',
-    caption: `post ${index}`,
-  }))
+const result = (code: string, day: number) => ({
+  url: `https://www.instagram.com/nasa/p/${code}/`,
+  title: 'NASA on Instagram',
+  snippet: `1K likes, 2 comments - nasa on May ${day}, 2026: "post ${code}"`,
+})
 
-const fetcher = (result: PublicPostsResult) => {
-  const calls = { count: 0 }
-  return {
-    calls,
-    fetchPosts: async () => {
-      calls.count++
-      return result
-    },
-  }
-}
+const results = (count: number) => Array.from({ length: count }, (_, index) => result(`code${String(index).padStart(3, '0')}`, (index % 28) + 1))
 
 beforeEach(() => clearMorePostsCache())
 
@@ -40,83 +34,66 @@ describe('toEmbedUrl', () => {
 })
 
 describe('getMorePostsPage', () => {
-  it('leaves out the posts the profile already shows and pages the rest', async () => {
-    const { fetchPosts } = fetcher({ status: 'ok', posts: posts(POSTS_SHOWN_WITHOUT_LOGIN + POSTS_PER_PAGE + 5) })
-    const first = await getMorePostsPage('nasa', 0, 0, fetchPosts)
+  it('offers to search until something has been searched for, and searches nothing itself', () => {
+    expect(getMorePostsPage('nasa', 0, 0)).toEqual({
+      username: 'nasa',
+      page: 0,
+      status: 'idle',
+      posts: [],
+      hasMore: false,
+      searchUrl: 'https://html.duckduckgo.com/html/?q=site%3Ainstagram.com%2Fnasa%2F',
+    })
+  })
+
+  it('leaves out the posts the profile already shows and pages the rest', () => {
+    storeSearchResults('nasa', results(POSTS_SHOWN_WITHOUT_LOGIN + POSTS_PER_PAGE + 5), 0)
+    const first = getMorePostsPage('nasa', 0, 1)
     expect(first.status).toBe('ok')
     expect(first.posts).toHaveLength(POSTS_PER_PAGE)
-    expect(first.posts[0].caption).toBe(`post ${POSTS_SHOWN_WITHOUT_LOGIN}`)
     expect(first.hasMore).toBe(true)
 
-    const second = await getMorePostsPage('nasa', 1, 0, fetchPosts)
+    const second = getMorePostsPage('nasa', 1, 1)
     expect(second.posts).toHaveLength(5)
     expect(second.hasMore).toBe(false)
   })
 
-  it('searches once per profile and reads later pages from what it kept', async () => {
-    const { fetchPosts, calls } = fetcher({ status: 'ok', posts: posts(60) })
-    await getMorePostsPage('nasa', 0, 0, fetchPosts)
-    await getMorePostsPage('NASA', 1, 1000, fetchPosts)
-    expect(calls.count).toBe(1)
+  it('keeps what was found for any spelling of the name', () => {
+    storeSearchResults('NASA', results(POSTS_SHOWN_WITHOUT_LOGIN + 3), 0)
+    expect(getMorePostsPage('nasa', 0, 1).posts).toHaveLength(3)
   })
 
-  it('searches again once what it kept is old', async () => {
-    const { fetchPosts, calls } = fetcher({ status: 'ok', posts: posts(60) })
-    await getMorePostsPage('nasa', 0, 0, fetchPosts)
-    await getMorePostsPage('nasa', 1, 11 * 60 * 1000, fetchPosts)
-    expect(calls.count).toBe(2)
+  it('offers to search again once what was found is old', () => {
+    storeSearchResults('nasa', results(POSTS_SHOWN_WITHOUT_LOGIN + 3), 0)
+    expect(getMorePostsPage('nasa', 0, 11 * 60 * 1000).status).toBe('idle')
   })
 
-  it('hands over the search page when there is a check, and does not keep it', async () => {
-    const { fetchPosts, calls } = fetcher({ status: 'challenge' })
-    const result = await getMorePostsPage('nasa', 0, 0, fetchPosts)
-    expect(result).toMatchObject({ status: 'challenge', posts: [], hasMore: false, searchUrl: 'https://html.duckduckgo.com/html/?q=site%3Ainstagram.com%2Fnasa%2F' })
-    await getMorePostsPage('nasa', 0, 1, fetchPosts)
-    expect(calls.count).toBe(2)
+  it('says there is nothing more when the search found no more than the profile shows', () => {
+    storeSearchResults('nasa', results(POSTS_SHOWN_WITHOUT_LOGIN), 0)
+    expect(getMorePostsPage('nasa', 0, 1)).toMatchObject({ status: 'ok', posts: [], hasMore: false })
   })
 
-  it('reports an error with the search page to fall back to', async () => {
-    const { fetchPosts } = fetcher({ status: 'error' })
-    expect(await getMorePostsPage('nasa', 0, 0, fetchPosts)).toMatchObject({ status: 'error', posts: [] })
-  })
-
-  it('shows nothing, and says it is fine, when the search found no more than the profile shows', async () => {
-    const { fetchPosts } = fetcher({ status: 'ok', posts: posts(POSTS_SHOWN_WITHOUT_LOGIN) })
-    expect(await getMorePostsPage('nasa', 0, 0, fetchPosts)).toMatchObject({ status: 'ok', posts: [], hasMore: false })
+  it('puts the newest first, after the twelve newest', () => {
+    const dated = (code: string, year: number) => ({ ...result(code, 1), snippet: `1K likes, 2 comments - nasa on May 1, ${year}: "post ${code}"` })
+    const newest = Array.from({ length: POSTS_SHOWN_WITHOUT_LOGIN }, (_, index) => dated(`top${index}`, 2030 + index))
+    storeSearchResults('nasa', [dated('old', 2001), ...newest, dated('new', 2003), dated('mid', 2002)], 0)
+    expect(getMorePostsPage('nasa', 0, 1).posts.map((post) => post.caption)).toEqual(['post new', 'post mid', 'post old'])
   })
 })
 
 describe('storeSearchResults', () => {
-  const result = (code: string, day: number) => ({
-    url: `https://www.instagram.com/nasa/p/${code}/`,
-    title: 'NASA on Instagram',
-    snippet: `1K likes, 2 comments - nasa on May ${day}, 2026: "post ${code}"`,
-  })
-
-  it('keeps what a visit to the search page found, newest first and without the first twelve', async () => {
-    const results = Array.from({ length: 15 }, (_, index) => result(`code${String(index).padStart(2, '0')}`, index + 1))
-    storeSearchResults('nasa', results, 0)
-    let calls = 0
-    const page = await getMorePostsPage('nasa', 0, 1, async () => {
-      calls++
-      return { status: 'error' }
-    })
-    expect(calls).toBe(0)
-    expect(page.posts.map((post) => post.caption)).toEqual(['post code02', 'post code01', 'post code00'])
-  })
-
-  it('ignores results that are not posts of the profile', async () => {
+  it('ignores results that are not posts of the profile', () => {
     storeSearchResults('nasa', [result('abcde', 1), { url: 'https://example.com/', title: '', snippet: '' }], 0)
-    const page = await getMorePostsPage('nasa', 0, 1, async () => ({ status: 'error' }))
-    expect(page).toMatchObject({ status: 'ok', posts: [], hasMore: false })
+    expect(getMorePostsPage('nasa', 0, 1)).toMatchObject({ status: 'ok', posts: [], hasMore: false })
   })
 })
 
 describe('search tabs', () => {
-  it('remembers the tab a search page was opened from, once', () => {
+  it('remembers the tab a search page was opened from, until it is taken', () => {
     registerSearchTab('search-tab', 'profile-tab', 'nasa')
+    expect(peekSearchTab('search-tab')).toEqual({ parentTabId: 'profile-tab', username: 'nasa' })
     expect(takeSearchTab('search-tab')).toEqual({ parentTabId: 'profile-tab', username: 'nasa' })
     expect(takeSearchTab('search-tab')).toBeUndefined()
+    expect(peekSearchTab('search-tab')).toBeUndefined()
   })
 
   it('knows nothing of a tab it did not open', () => {

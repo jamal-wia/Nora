@@ -144,8 +144,6 @@ export function continuePosts(posts: PublicPost[], shownShortcodes: Iterable<str
 
 const USERNAME = /^[A-Za-z0-9._]{1,30}$/
 const SEARCH_ENDPOINT = 'https://html.duckduckgo.com/html/'
-const MAX_PAGES = 3
-const REQUEST_TIMEOUT_MS = 15_000
 
 /** The search that lists a profile's posts, or null for a name that is not a profile name. */
 export function buildProfileSearchQuery(username: string) {
@@ -182,87 +180,6 @@ export function getSearchPageUsername(url: string) {
  */
 export function isChallengePage(html: string) {
   return parseSearchResults(html).length === 0 && /anomaly|captcha|challenge-form|unusual traffic/i.test(html)
-}
-
-/** The form behind the "Next" button, as the body of the request it sends. Null on the last page. */
-export function parseNextPageForm(html: string) {
-  const form = html.match(/<div class="nav-link">\s*<form[^>]*>([\s\S]*?)<\/form>/)
-  if (!form) {
-    return null
-  }
-  const body = new URLSearchParams()
-  for (const input of form[1].matchAll(/<input\b[^>]*>/g)) {
-    const name = input[0].match(/name=["']([^"']*)["']/)?.[1]
-    const value = input[0].match(/value=["']([^"']*)["']/)?.[1]
-    if (name && value !== undefined && !/type=["']submit["']/.test(input[0])) {
-      body.set(name, decodeEntities(value))
-    }
-  }
-  return body.has('q') ? body : null
-}
-
-export type PublicPostsResult =
-  | { status: 'ok'; posts: PublicPost[] }
-  | { status: 'challenge' }
-  | { status: 'error' }
-
-type Fetch = (input: string, init?: { method?: string; headers?: Record<string, string>; body?: string; signal?: AbortSignal }) => Promise<{
-  ok: boolean
-  text: () => Promise<string>
-}>
-
-/**
- * The posts of a profile that DuckDuckGo has indexed, at most a few result pages
- * of them, not yet on the page and newest first. Stops at the first sign of a
- * check and says so, so the caller can hand the person the search page.
- */
-export async function fetchProfilePosts(
-  username: string,
-  shownShortcodes: Iterable<string>,
-  fetchImpl: Fetch = fetch as unknown as Fetch,
-): Promise<PublicPostsResult> {
-  const query = buildProfileSearchQuery(username)
-  if (!query) {
-    return { status: 'error' }
-  }
-
-  const posts: PublicPost[] = []
-  let request: { url: string; init?: Parameters<Fetch>[1] } = { url: `${SEARCH_ENDPOINT}?q=${encodeURIComponent(query)}` }
-  for (let page = 0; page < MAX_PAGES; page++) {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
-    let html: string
-    try {
-      const res = await fetchImpl(request.url, { ...request.init, signal: controller.signal })
-      if (!res.ok) {
-        return page === 0 ? { status: 'error' } : { status: 'ok', posts: continuePosts(posts, shownShortcodes) }
-      }
-      html = await res.text()
-    } catch {
-      return page === 0 ? { status: 'error' } : { status: 'ok', posts: continuePosts(posts, shownShortcodes) }
-    } finally {
-      clearTimeout(timer)
-    }
-
-    if (isChallengePage(html)) {
-      return { status: 'challenge' }
-    }
-    for (const result of parseSearchResults(html)) {
-      const post = toInstagramPost(result, username)
-      if (post) {
-        posts.push(post)
-      }
-    }
-    const next = parseNextPageForm(html)
-    if (!next) {
-      break
-    }
-    request = {
-      url: SEARCH_ENDPOINT,
-      init: { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: next.toString() },
-    }
-  }
-  return { status: 'ok', posts: continuePosts(posts, shownShortcodes) }
 }
 
 /** How many posts of a profile Instagram shows without an account, and so how many of the newest results are left out. */
