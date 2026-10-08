@@ -74,6 +74,10 @@ export const anonymousRules: AnonymousRule[] = [
     // Seen 2026-10-08 on a logged-out public profile, mobile layout: "See full
     // profile in the app".
     hosts: ['instagram.com'],
+    // On an embed page, the row under the video that says "View more on Instagram": it leads to the
+    // profile, which is a page that asks for the app. Seen 2026-10-09; the embed pages keep readable
+    // class names, so this is no guess at a hashed one and matches nothing on the site itself.
+    hide: ['.PrimaryCTA'],
     overlays: [
       'div[role="dialog"]:has(a[href^="intent://"])',
       // The bar pinned to the top, with "Log in" and "Open app": the one header that holds both.

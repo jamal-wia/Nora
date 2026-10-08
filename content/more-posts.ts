@@ -1,6 +1,7 @@
 import { emit } from './utils'
 import type { MorePostCard, MorePostsLabels, MorePostsMessage } from '../lib/more-posts'
 import { noraMorePostsEvent, noraSettingsEvent } from './nora'
+import { getAnonymousCss } from './anonymous'
 import { EMBED_AUTOMATIC_RETRIES, EMBED_LOAD_TIMEOUT_MS, clampEmbedHeight, isEmbedLoaded, parseEmbedMessage } from './embed-messages'
 
 const SCAN_DELAY_MS = 400
@@ -336,6 +337,21 @@ export function initMorePosts() {
     frame.title = card.caption.slice(0, 80) || labels.openPost
     frame.setAttribute('loading', 'lazy')
     wrapper.appendChild(frame)
+    // The embed page is on instagram.com like this one, so what the mode hides on an embed page can be hidden
+    // inside the card too, once it has loaded.
+    frame.addEventListener('load', () => {
+      try {
+        const doc = frame.contentDocument
+        if (doc?.head && !doc.getElementById('_nora_embed_css')) {
+          const style = doc.createElement('style')
+          style.id = '_nora_embed_css'
+          style.textContent = getAnonymousCss('www.instagram.com', true)
+          doc.head.appendChild(style)
+        }
+      } catch {
+        // A frame that is not on this origin cannot be reached, and is left as it is.
+      }
+    })
     const embed: EmbedCard = { frame, wrapper, url: card.embedUrl, labels, attempts: 0, loaded: false, timer: undefined }
     embeds.add(embed)
     pendingEmbeds.set(frame, embed)

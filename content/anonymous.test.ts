@@ -220,6 +220,13 @@ describe('anonymousRules', () => {
     }
   })
 
+  it('hides the View more row of an embed page, and nothing else of the site by that class', () => {
+    const embed = cheerio.load('<div class="HoverCard"><div class="PrimaryCTA"><a href="/artefr/">View more on Instagram</a></div></div>')
+    expect(embed('.PrimaryCTA')).toHaveLength(1)
+    expect(getAnonymousCss('www.instagram.com', true)).toContain('.PrimaryCTA { display: none !important; }')
+    expect(getAnonymousCss('www.x.com', true)).not.toContain('.PrimaryCTA')
+  })
+
   it('has selectors that parse', () => {
     expect(selectors.length).toBeGreaterThan(0)
     for (const selector of selectors) {
