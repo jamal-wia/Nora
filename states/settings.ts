@@ -76,6 +76,7 @@ export interface Settings {
   oneTabPerSite: boolean
   oneProfilePerSite: boolean
   anonymousMode: boolean
+  anonymousMorePosts: boolean
   anonymousDisabledHosts: string[]
 
   deckTabWidth: number
@@ -192,6 +193,7 @@ export const getSettingsSnapshot = (value: Partial<Store> | undefined = settings
     oneTabPerSite: bool(value?.oneTabPerSite),
     oneProfilePerSite: bool(value?.oneProfilePerSite),
     anonymousMode: bool(value?.anonymousMode),
+    anonymousMorePosts: bool(value?.anonymousMorePosts),
     anonymousDisabledHosts: sanitizeSiteKeys(value?.anonymousDisabledHosts),
 
     deckTabWidth: typeof value?.deckTabWidth === 'number' ? value.deckTabWidth : 400,
@@ -277,6 +279,9 @@ export const normalizeSettings = <T extends Partial<Settings> | undefined>(data:
   if (typeof data.anonymousMode !== 'boolean') {
     data.anonymousMode = false
   }
+  if (typeof data.anonymousMorePosts !== 'boolean') {
+    data.anonymousMorePosts = false
+  }
   data.anonymousDisabledHosts = sanitizeSiteKeys(data.anonymousDisabledHosts)
   if (typeof data.protectWebRtcIp !== 'boolean') {
     data.protectWebRtcIp = true
@@ -338,6 +343,7 @@ export const settings$: Observable<Store> = observable<Store>({
   oneTabPerSite: false,
   oneProfilePerSite: false,
   anonymousMode: false,
+  anonymousMorePosts: false,
   anonymousDisabledHosts: [],
 
   deckTabWidth: 400,

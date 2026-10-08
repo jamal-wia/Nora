@@ -55,6 +55,7 @@ import {
 } from '@/lib/blocklist'
 import { blocklist$ } from '@/states/blocklist'
 import { buildAnonymousModeScript, isAnonymousModeActive } from '@/lib/anonymous'
+import { getMorePostsPage } from '@/lib/more-posts'
 import { twColor, useTwColor } from '@/lib/theme'
 
 const LOAD_URL_MAX_RETRIES = 5
@@ -240,6 +241,7 @@ export const NoraTab: React.FC<{
   const inspectable = useValue(settings$.inspectable)
   const protectWebRtcIp = useValue(settings$.protectWebRtcIp)
   const anonymousMode = useValue(settings$.anonymousMode)
+  const anonymousMorePosts = useValue(settings$.anonymousMorePosts)
   const anonymousDisabledHosts = useValue(settings$.anonymousDisabledHosts)
   const webRtcGuardScript = useValue(webRtcGuardScript$)
   const youTubeGuardScript = useValue(youTubeGuardScript$)
@@ -352,6 +354,17 @@ export const NoraTab: React.FC<{
     [tab.id],
   )
 
+  const anonymousActive = useCallback(
+    (host: string) =>
+      isAnonymousModeActive({
+        enabled: anonymousMode,
+        profileId: tab.profile,
+        host,
+        disabledHosts: anonymousDisabledHosts || [],
+      }),
+    [anonymousMode, anonymousDisabledHosts, tab.profile],
+  )
+
   const applyContentState = useCallback(
     async (target?: WebviewTag | any | null, url?: string) => {
       const webview = target || webviewRef.current || nativeRef.current
@@ -368,12 +381,8 @@ export const NoraTab: React.FC<{
         // per-site switch covers every kind of blocking and not just the lists.
         adBlockingEnabled: !isAdBlockingDisabledForHost(currentHost),
         // Only ever on for a tab in the Anonymous profile; see `isAnonymousModeActive`.
-        anonymousMode: isAnonymousModeActive({
-          enabled: anonymousMode,
-          profileId: tab.profile,
-          host: currentHost,
-          disabledHosts: anonymousDisabledHosts || [],
-        }),
+        anonymousMode: anonymousActive(currentHost),
+        anonymousMorePosts: anonymousMorePosts && anonymousActive(currentHost),
       })})`
       const userStylesScript = `window.Nora?.setUserStyles?.(${JSON.stringify(getUserStylesSnapshot())})`
       void executeWebviewJavaScriptQuietly(webview, settingsScript)
@@ -384,10 +393,9 @@ export const NoraTab: React.FC<{
       }
     },
     [
-      anonymousMode,
-      anonymousDisabledHosts,
+      anonymousActive,
+      anonymousMorePosts,
       doubleTapToToggleHeader,
-      tab.profile,
       tab.url,
       videoEdgeLongPressTo2x,
       translateOnDoubleTap,
@@ -770,6 +778,39 @@ export const NoraTab: React.FC<{
         await ensureDownloadNotificationPermission()
         getCurrentWebview()?.saveFile(data.content, data.fileName, data.mimeType)
         break
+      case 'load-more-posts': {
+        // A page asking for this is only listened to where the person turned it on for the tab.
+        const pageHost = getHostFromUrl(pageUrlRef.current || tab.url)
+        const page = Number(data?.page)
+        if (
+          !anonymousMorePosts ||
+          !anonymousActive(pageHost) ||
+          !(pageHost === 'instagram.com' || pageHost.endsWith('.instagram.com')) ||
+          typeof data?.username !== 'string' ||
+          !Number.isInteger(page) ||
+          page < 0 ||
+          page > 50
+        ) {
+          break
+        }
+        const payload = await getMorePostsPage(data.username, page)
+        const labels = {
+          title: t('morePosts.title'),
+          loading: t('morePosts.loading'),
+          more: t('morePosts.more'),
+          openSearch: t('morePosts.openSearch'),
+          openPost: t('morePosts.openPost'),
+          note: t('morePosts.note'),
+          challenge: t('morePosts.challenge'),
+          error: t('morePosts.error'),
+          empty: t('morePosts.empty'),
+        }
+        void executeWebviewJavaScriptQuietly(
+          webviewRef.current || nativeRef.current,
+          `window.Nora?.setMorePosts?.(${JSON.stringify({ ...payload, labels })})`,
+        )
+        break
+      }
       case 'scroll':
         onScroll({ dy: data.dy, y: data.y, autoHideHeader, hideToolbarWhenScrolled })
         break
