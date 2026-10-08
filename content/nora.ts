@@ -12,6 +12,7 @@ import { isAdBlockingDisabledHere, isAnonymousModeBootstrapped } from './site-bl
 export const noraSettingsEvent = 'nora:settings'
 export const noraUserStylesEvent = 'nora:user-styles'
 export const noraUserScriptsEvent = 'nora:user-scripts'
+export const noraMorePostsEvent = 'nora:more-posts'
 
 const defaultSettings = {
   doubleTapToToggleHeader: false,
@@ -25,6 +26,8 @@ const defaultSettings = {
   adBlockingEnabled: !isAdBlockingDisabledHere(),
   // Hides sign-in prompts; only ever on for a tab in the Anonymous profile.
   anonymousMode: isAnonymousModeBootstrapped(),
+  // Lists more public posts below an Instagram profile; on only with the mode.
+  anonymousMorePosts: false,
 }
 
 let settings = { ...defaultSettings }
@@ -210,6 +213,11 @@ function setSettings(next: Partial<typeof defaultSettings> = {}) {
   return settings
 }
 
+// What the app found for the block below a profile, handed to whoever is showing it.
+function setMorePosts(payload: unknown) {
+  window.dispatchEvent(new CustomEvent(noraMorePostsEvent, { detail: payload }))
+}
+
 function getUserStyles() {
   return userStyles
 }
@@ -240,6 +248,7 @@ export function initNora() {
     getVideoUrl,
     getSettings,
     setSettings,
+    setMorePosts,
     getUserStyles,
     setUserStyles,
     getUserScripts,
