@@ -1,4 +1,5 @@
 import { initAnonymousMode } from './anonymous'
+import { initInstagramPostOpener } from './instagram-posts'
 import { initMorePosts } from './more-posts'
 import { blockAds, hideAds } from './ad'
 import { injectCSS } from './css'
@@ -34,6 +35,7 @@ try {
 async function initObserver() {
   const scheduleAnonymousScan = initAnonymousMode()
   const scheduleMorePostsScan = initMorePosts()
+  initInstagramPostOpener()
   const observer = new MutationObserver((mutations) => {
     hideAds(mutations)
     handleDialogs()

@@ -212,6 +212,8 @@ export type OpenTabOptions = {
   profile?: string
   profileMode?: ProfileMode
   source?: 'manual' | 'child' | 'shared' | 'reuse'
+  /** Open the tab as the desktop site, for a page that has no player on the mobile one. */
+  desktopMode?: boolean
 }
 
 export type TabActivationReason = 'user' | 'open' | 'close' | 'back' | 'system'
@@ -421,6 +423,7 @@ export const tabs$: Observable<Store> = observable<Store>({
       url,
       isLoading: Boolean(url),
       ...profile,
+      ...(options?.desktopMode ? { desktopMode: true } : {}),
       backToNewTab: !url,
     }
     tabs$.tabs.push(tab)

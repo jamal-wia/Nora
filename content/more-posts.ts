@@ -194,7 +194,7 @@ export function initMorePosts() {
     if (searchUrl && labels) {
       const button = create('button', buttonCss, labels.openSearch)
       button.type = 'button'
-      button.addEventListener('click', () => emit('new-tab', { url: searchUrl, kind: 'link' }))
+      button.addEventListener('click', () => emit('open-anonymous-tab', { url: searchUrl }))
       status.appendChild(button)
     }
     block.appendChild(status)
@@ -242,7 +242,7 @@ export function initMorePosts() {
     open.href = card.url
     open.addEventListener('click', (event) => {
       event.preventDefault()
-      emit('new-tab', { url: card.url, kind: 'link' })
+      emit('open-anonymous-tab', { url: card.url })
     })
     wrapper.appendChild(open)
     return wrapper

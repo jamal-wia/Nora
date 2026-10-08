@@ -56,6 +56,7 @@ import {
 import { blocklist$ } from '@/states/blocklist'
 import { buildAnonymousModeScript, isAnonymousModeActive } from '@/lib/anonymous'
 import { getMorePostsPage } from '@/lib/more-posts'
+import { resolveAnonymousTabRequest } from '@/lib/anonymous-tab'
 import { twColor, useTwColor } from '@/lib/theme'
 
 const LOAD_URL_MAX_RETRIES = 5
@@ -778,6 +779,21 @@ export const NoraTab: React.FC<{
         await ensureDownloadNotificationPermission()
         getCurrentWebview()?.saveFile(data.content, data.fileName, data.mimeType)
         break
+      case 'open-anonymous-tab': {
+        // A post or a search page, opened as a tab of its own in the profile of this one. The
+        // page's own "new tab" would put it in whichever profile was chosen last.
+        const request = resolveAnonymousTabRequest(data?.url)
+        if (request && anonymousActive(getHostFromUrl(pageUrlRef.current || tab.url))) {
+          tabs$.openTab(request.url, {
+            parentTabId: tab.id,
+            source: 'child',
+            profile: tab.profile,
+            profileMode: 'manual',
+            desktopMode: request.desktopMode,
+          })
+        }
+        break
+      }
       case 'load-more-posts': {
         // A page asking for this is only listened to where the person turned it on for the tab.
         const pageHost = getHostFromUrl(pageUrlRef.current || tab.url)
