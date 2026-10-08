@@ -12,6 +12,7 @@ import {
   getFaviconUrl,
   isValidSearchTemplate,
 } from '@/lib/search'
+import { toBlocklistSiteKey, updateBlocklistExclusions } from '@/lib/blocklist/policy'
 import { ANONYMOUS_PROFILE_COLOR, ANONYMOUS_PROFILE_ID, ANONYMOUS_PROFILE_NAME } from '@/lib/anonymous'
 import { DEFAULT_PUBLIC_SEARCH_SERVICE_ID, normalizePublicSearchServiceId } from '@/lib/public-search'
 
@@ -74,6 +75,8 @@ export interface Settings {
   oneHandMode: boolean
   oneTabPerSite: boolean
   oneProfilePerSite: boolean
+  anonymousMode: boolean
+  anonymousDisabledHosts: string[]
 
   deckTabWidth: number
   sidebarCollapsed: boolean
@@ -101,6 +104,8 @@ interface Store extends Settings {
   deleteCustomSearchProvider: (id: string) => void
   addProfile: (name: string, color: string) => string | undefined
   ensureAnonymousProfile: () => string
+  setAnonymousMode: (enabled: boolean) => void
+  setAnonymousHostDisabled: (host: string, disabled: boolean) => void
   updateProfile: (id: string, name: string, color: string) => void
   deleteProfile: (id: string) => void
   setDefaultZoom: (zoom: number) => void
@@ -117,6 +122,13 @@ const sanitizeProfiles = (profiles?: (Partial<Profile> | null | undefined)[]) =>
         color: typeof profile!.color === 'string' ? profile!.color! : DEFAULT_PROFILE.color,
         ...(profile!.isDefault ? { isDefault: true } : {}),
       })),
+  )
+
+const sanitizeSiteKeys = (hosts?: unknown) =>
+  Array.from(
+    new Set(
+      (Array.isArray(hosts) ? hosts : []).map((host) => toBlocklistSiteKey(typeof host === 'string' ? host : '')).filter(Boolean),
+    ),
   )
 
 const sanitizeSiteZoom = (siteZoom?: Record<string, unknown>) => {
@@ -179,6 +191,8 @@ export const getSettingsSnapshot = (value: Partial<Store> | undefined = settings
     oneHandMode: bool(value?.oneHandMode),
     oneTabPerSite: bool(value?.oneTabPerSite),
     oneProfilePerSite: bool(value?.oneProfilePerSite),
+    anonymousMode: bool(value?.anonymousMode),
+    anonymousDisabledHosts: sanitizeSiteKeys(value?.anonymousDisabledHosts),
 
     deckTabWidth: typeof value?.deckTabWidth === 'number' ? value.deckTabWidth : 400,
     sidebarCollapsed: bool(value?.sidebarCollapsed),
@@ -260,6 +274,10 @@ export const normalizeSettings = <T extends Partial<Settings> | undefined>(data:
   if (typeof data.oneProfilePerSite !== 'boolean') {
     data.oneProfilePerSite = false
   }
+  if (typeof data.anonymousMode !== 'boolean') {
+    data.anonymousMode = false
+  }
+  data.anonymousDisabledHosts = sanitizeSiteKeys(data.anonymousDisabledHosts)
   if (typeof data.protectWebRtcIp !== 'boolean') {
     data.protectWebRtcIp = true
   }
@@ -319,6 +337,8 @@ export const settings$: Observable<Store> = observable<Store>({
   oneHandMode: false,
   oneTabPerSite: false,
   oneProfilePerSite: false,
+  anonymousMode: false,
+  anonymousDisabledHosts: [],
 
   deckTabWidth: 400,
   sidebarCollapsed: false,
@@ -443,6 +463,17 @@ export const settings$: Observable<Store> = observable<Store>({
       settings$.profiles.push({ id: ANONYMOUS_PROFILE_ID, name: ANONYMOUS_PROFILE_NAME, color: ANONYMOUS_PROFILE_COLOR })
     }
     return ANONYMOUS_PROFILE_ID
+  },
+  setAnonymousMode: (enabled) => {
+    if (enabled) {
+      settings$.ensureAnonymousProfile()
+    }
+    settings$.anonymousMode.set(enabled)
+  },
+  setAnonymousHostDisabled: (host, disabled) => {
+    settings$.anonymousDisabledHosts.set(
+      updateBlocklistExclusions(settings$.anonymousDisabledHosts.get() || [], host, disabled),
+    )
   },
   updateProfile: (id, name, color) => {
     const profiles = settings$.profiles.get()
