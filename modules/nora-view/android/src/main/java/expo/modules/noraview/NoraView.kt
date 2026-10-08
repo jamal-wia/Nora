@@ -266,7 +266,11 @@ fun installGoogleOAuthShim(webView: WebView) {
   }
 }
 
-fun shouldNoraOverrideUrlLoading(view: WebView, url: String): Boolean {
+/**
+ * @param openInApp when set, a link that asks for an app can be answered by loading its web page
+ * here, in the tab; it is set only where the person turned that on, see [inAppUrlFor].
+ */
+fun shouldNoraOverrideUrlLoading(view: WebView, url: String, openInApp: ((String) -> Unit)? = null): Boolean {
   val uri = Uri.parse(url)
   val host = uri.host
   val scheme = uri.scheme?.lowercase()
@@ -276,10 +280,7 @@ fun shouldNoraOverrideUrlLoading(view: WebView, url: String): Boolean {
   val isFacebookHost = normalizedHost?.endsWith(".facebook.com") == true && normalizedHost != "l.facebook.com"
 
   if (!isInternalScheme) {
-    // A link to an app that is not installed falls back to the web page it stands for.
-    // For a site Nora shows, that page is opened here, in the tab, and not handed to
-    // whichever browser the system has as its default.
-    return handleExternalAppUrl(view.context, url) { target -> view.post { view.loadUrl(target) } }
+    return handleExternalAppUrl(view.context, url, openInApp)
   }
 
   if (host in VIEW_HOSTS ||
@@ -350,13 +351,17 @@ fun inAppUrlFor(url: String?, hosts: Collection<String>): String? {
   // `applink.instagram.com` is how Instagram names its page when it asks for the app.
   val site = host.removePrefix("applink.")
   val target = listOf(host, "www.$host", site, "www.$site").firstOrNull { it in hosts } ?: return null
+  // Always https: a page that was asked for here is not to get round the setting that blocks plain http.
   return buildString {
-    append(scheme).append("://").append(target)
+    append("https://").append(target)
     append(uri.rawPath ?: "")
     uri.rawQuery?.let { append("?").append(it) }
     uri.rawFragment?.let { append("#").append(it) }
   }
 }
+
+/** The sites Nora shows, which is what an app link is checked against. */
+private fun inAppHosts() = VIEW_HOSTS.toList() + nouController.settings.internalHosts.map { it.lowercase() }
 
 fun handleExternalAppUrl(context: Context, url: String, openInApp: ((String) -> Unit)? = null): Boolean {
   val uri = Uri.parse(url)
@@ -372,7 +377,7 @@ fun handleExternalAppUrl(context: Context, url: String, openInApp: ((String) -> 
       // For a site Nora shows, that is Nora's own tab.
       val requested = Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
       if (requested.`package` == null && requested.component == null) {
-        val inApp = inAppUrlFor(requested.dataString, VIEW_HOSTS.toList() + nouController.settings.internalHosts.map { it.lowercase() })
+        val inApp = inAppUrlFor(requested.dataString, inAppHosts())
         if (inApp != null) {
           openInApp(inApp)
           return true
@@ -406,7 +411,7 @@ fun handleExternalAppUrl(context: Context, url: String, openInApp: ((String) -> 
       try {
         val fallbackIntent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
         if (openInApp != null) {
-          val hosts = VIEW_HOSTS.toList() + nouController.settings.internalHosts.map { it.lowercase() }
+          val hosts = inAppHosts()
           val inApp = inAppUrlFor(fallbackIntent.dataString, hosts)
             ?: inAppUrlFor(fallbackIntent.getStringExtra("browser_fallback_url"), hosts)
           if (inApp != null) {
@@ -854,6 +859,14 @@ class NoraView(context: Context, appContext: AppContext) : ExpoView(context, app
           }
 
           override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
+            return overrideUrlLoading(view, url, false)
+          }
+
+          /**
+           * [allowInApp]: this is the person's own tap, on the page itself, in the Anonymous profile --
+           * the one place a link that asks for an app is answered by opening its page in the tab.
+           */
+          private fun overrideUrlLoading(view: WebView, url: String, allowInApp: Boolean): Boolean {
             if (url.startsWith("http://") && !nouController.settings.allowHttpWebsite) {
               showHttpBlockedPage(url)
               return true
@@ -875,11 +888,18 @@ class NoraView(context: Context, appContext: AppContext) : ExpoView(context, app
               load(url.replace("www", "m"))
               return true
             }
-            return shouldNoraOverrideUrlLoading(view, url)
+            return shouldNoraOverrideUrlLoading(
+              view,
+              url,
+              if (allowInApp) { target -> view.post { view.loadUrl(target) } } else null,
+            )
           }
 
           override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-            return shouldOverrideUrlLoading(view, request.url.toString())
+            // Not a frame of the page, which a page can send anywhere without being asked, and not without
+            // a tap. Neither is any other profile: for them an app link is handled as it always was.
+            val allowInApp = request.isForMainFrame && request.hasGesture() && profileName == "anonymous"
+            return overrideUrlLoading(view, request.url.toString(), allowInApp)
           }
 
           override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {

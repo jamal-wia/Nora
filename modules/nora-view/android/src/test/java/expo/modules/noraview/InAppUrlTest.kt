@@ -27,7 +27,7 @@ class InAppUrlTest {
   @Test
   fun keepsAHostThatIsAlreadyNoras() {
     assertEquals("https://x.com/NASA/status/1", inAppUrlFor("https://x.com/NASA/status/1", hosts))
-    assertEquals("http://bsky.app/profile/a", inAppUrlFor("http://bsky.app/profile/a", hosts))
+    assertEquals("https://bsky.app/profile/a", inAppUrlFor("https://bsky.app/profile/a", hosts))
   }
 
   // Instagram asks for its app through an `applink.` address of the same site.
@@ -37,6 +37,12 @@ class InAppUrlTest {
       "https://www.instagram.com/artefr/?ig_mid=1",
       inAppUrlFor("https://applink.instagram.com/artefr/?ig_mid=1", hosts),
     )
+  }
+
+  // Plain http would get round the setting that blocks it, so the page asked for is always https.
+  @Test
+  fun alwaysAsksForHttps() {
+    assertEquals("https://x.com/NASA", inAppUrlFor("http://x.com/NASA", hosts))
   }
 
   @Test
