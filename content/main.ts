@@ -1,3 +1,4 @@
+import { initAnonymousMode } from './anonymous'
 import { blockAds, hideAds } from './ad'
 import { injectCSS } from './css'
 import { injectScript } from './script'
@@ -30,9 +31,11 @@ try {
 }
 
 async function initObserver() {
+  const scheduleAnonymousScan = initAnonymousMode()
   const observer = new MutationObserver((mutations) => {
     hideAds(mutations)
     handleDialogs()
+    scheduleAnonymousScan()
   })
   observer.observe(document.documentElement, {
     childList: true,

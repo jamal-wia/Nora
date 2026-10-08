@@ -7,7 +7,7 @@ import {
   type UserStylesSnapshot,
 } from '../lib/user-styles'
 import { getBase64Payload } from '../lib/base64'
-import { isAdBlockingDisabledHere } from './site-blocking'
+import { isAdBlockingDisabledHere, isAnonymousModeBootstrapped } from './site-blocking'
 
 export const noraSettingsEvent = 'nora:settings'
 export const noraUserStylesEvent = 'nora:user-styles'
@@ -23,6 +23,8 @@ const defaultSettings = {
   // Turned off by the per-site "Block ads" switch. Resolved here as well as in
   // the app's own push of it, which does not land until the page has loaded.
   adBlockingEnabled: !isAdBlockingDisabledHere(),
+  // Hides sign-in prompts; only ever on for a tab in the Anonymous profile.
+  anonymousMode: isAnonymousModeBootstrapped(),
 }
 
 let settings = { ...defaultSettings }

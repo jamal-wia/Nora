@@ -21,7 +21,7 @@ export function isAdBlockingDisabledHere() {
  * whatever site is showing it. `ancestorOrigins` is readable cross-origin,
  * unlike `top.location`, and lists the outermost frame last.
  */
-function pageHost() {
+export function pageHost() {
   const { ancestorOrigins, hostname } = document.location
   const top = ancestorOrigins?.length ? ancestorOrigins[ancestorOrigins.length - 1] : ''
   if (top && top !== 'null') {
@@ -30,4 +30,20 @@ function pageHost() {
     } catch (e) {}
   }
   return hostname
+}
+
+/**
+ * Whether the anonymous mode is on for the site this page is on, from what the
+ * app handed over at document start. It is only injected for a tab in the
+ * Anonymous profile with the mode on, so its absence means off. Like the ad
+ * blocking switch, the app's own push of the flag does not land until the page
+ * has loaded.
+ */
+export function isAnonymousModeBootstrapped() {
+  try {
+    const disabledHosts = window.__noraAnonymousDisabledHosts
+    return Array.isArray(disabledHosts) && !isBlocklistExcludedHost(pageHost(), disabledHosts)
+  } catch (e) {
+    return false
+  }
 }
