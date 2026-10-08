@@ -51,7 +51,8 @@ describe('getAnonymousCss', () => {
   it('hides what the script marked and unlocks scrolling only after it marked something', () => {
     const css = getAnonymousCss('example.com', true, rules)
     expect(css).toContain('[data-nora-anonymous-hidden] { display: none !important; }')
-    expect(css).toContain('html[data-nora-anonymous-prompt] body { overflow: auto !important; }')
+    expect(css).toContain('html[data-nora-anonymous-prompt] { overflow: auto !important; }')
+    expect(css).toContain('html[data-nora-anonymous-prompt] body { overflow: visible !important; }')
   })
 })
 
@@ -139,13 +140,14 @@ describe('anonymousRules', () => {
     ...(rule.hide || []),
     ...(rule.overlays || []),
     ...(rule.portals || []),
+    ...(rule.dismiss || []),
   ])
   const dom = cheerio.load('<div role="dialog"><a href="/login">x</a></div>')
 
   it('has something to do on every site it lists', () => {
     for (const rule of anonymousRules) {
       expect(rule.hosts.length).toBeGreaterThan(0)
-      expect((rule.hide?.length || 0) + (rule.overlays?.length || 0) + (rule.portals?.length || 0)).toBeGreaterThan(0)
+      expect((rule.hide?.length || 0) + (rule.overlays?.length || 0) + (rule.portals?.length || 0) + (rule.dismiss?.length || 0)).toBeGreaterThan(0)
     }
   })
 
@@ -175,6 +177,15 @@ describe('anonymousRules', () => {
     expect(threads(threadsSelector)).toHaveLength(1)
     const viewer = cheerio.load('<div role="dialog" aria-modal="true"><img src="a.jpg"></div>')
     expect(viewer(threadsSelector)).toHaveLength(0)
+  })
+
+  it('only dismisses prompts that it also hides, so a missing close button still leaves the prompt out of the way', () => {
+    for (const rule of anonymousRules.filter((rule) => rule.dismiss?.length)) {
+      const hidden = [...(rule.hide || []), ...(rule.overlays || []), ...(rule.portals || [])]
+      for (const selector of rule.dismiss!) {
+        expect(hidden.some((hiddenSelector) => selector.startsWith(hiddenSelector))).toBe(true)
+      }
+    }
   })
 
   it('never targets a captcha or bot check', () => {

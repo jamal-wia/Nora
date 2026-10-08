@@ -26,7 +26,10 @@ export function getAnonymousCss(host: string, enabled: boolean, rules: Anonymous
     // A sheet that locked the page's scrolling leaves it locked once it is hidden.
     // Only while one has been hidden, so a lock the site sets for its own reasons
     // is not undone on pages that never showed a prompt.
-    `html[${promptAttribute}], html[${promptAttribute}] body { overflow: auto !important; }`,
+    // The page scrolls, not the body: `overflow: auto` on the body would make it a scroll
+    // container of its own wherever its height is fixed, and the page would stop moving.
+    `html[${promptAttribute}] { overflow: auto !important; }`,
+    `html[${promptAttribute}] body { overflow: visible !important; }`,
   ].join('\n')
 }
 
@@ -85,7 +88,7 @@ const isModeOn = () => Boolean(window.Nora?.getSettings?.().anonymousMode)
  */
 export function initAnonymousMode() {
   const { hostname } = document.location
-  if (!getAnonymousRules(hostname).some((rule) => rule.overlays?.length || rule.portals?.length)) {
+  if (!getAnonymousRules(hostname).some((rule) => rule.overlays?.length || rule.portals?.length || rule.dismiss?.length)) {
     return () => {}
   }
 
@@ -124,6 +127,14 @@ export function initAnonymousMode() {
     hide(
       rules.flatMap((rule) => rule.overlays || []),
       (match) => findOverlayTarget(match, isFloating),
+    )
+    // Clicked, not hidden: the page's own code is what must stop blocking the scroll.
+    hide(
+      rules.flatMap((rule) => rule.dismiss || []),
+      (match) => {
+        ;(match as HTMLElement).click()
+        return match
+      },
     )
     hide(
       rules.flatMap((rule) => rule.portals || []),

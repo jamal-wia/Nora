@@ -35,6 +35,14 @@ export interface AnonymousRule {
    * so a prompt rendered inside the app can never take the whole page with it.
    */
   portals?: string[]
+  /**
+   * The prompt's own close button, clicked once when it shows up. For prompts built
+   * with a dialog library that keeps blocking wheel and touch scrolling for as long
+   * as its state says the dialog is open, however it is hidden: only closing it the
+   * way the site expects lifts that. Pair it with `hide`, which covers the moments
+   * before the click and a close button that stops being found.
+   */
+  dismiss?: string[]
 }
 
 export const anonymousRules: AnonymousRule[] = [
@@ -45,6 +53,9 @@ export const anonymousRules: AnonymousRule[] = [
       // "Get the full app experience" sheet and its backdrop.
       '[data-interaction="app-store-obstruction"]',
     ],
+    // Hiding it is not enough here: while the sheet counts as open, the page cancels
+    // every wheel and touch scroll. Seen 2026-10-08, same page.
+    dismiss: ['[data-interaction="app-store-obstruction"] button'],
   },
   {
     // Seen 2026-10-08 on m.facebook.com, logged-out public page; the sheet also
