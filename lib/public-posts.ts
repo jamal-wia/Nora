@@ -152,10 +152,28 @@ export function buildProfileSearchQuery(username: string) {
   return USERNAME.test(username) ? `site:instagram.com/${username}/` : null
 }
 
-/** The same search on DuckDuckGo's own page, which is where a person can deal with a check themselves. */
+/**
+ * The same search on DuckDuckGo's own page, in a tab of the browser, which is where a person
+ * can deal with a check themselves. It is the HTML page of the search, the one that is read
+ * for the results, and so the posts found there can be added to the profile once it has loaded.
+ */
 export function buildProfileSearchPageUrl(username: string) {
   const query = buildProfileSearchQuery(username)
-  return query ? `https://duckduckgo.com/?q=${encodeURIComponent(query)}` : null
+  return query ? `${SEARCH_ENDPOINT}?q=${encodeURIComponent(query)}` : null
+}
+
+/** The profile a search page of `buildProfileSearchPageUrl` is for, or null for any other address. */
+export function getSearchPageUsername(url: string) {
+  try {
+    const parsed = new URL(url)
+    if (parsed.origin + parsed.pathname !== SEARCH_ENDPOINT) {
+      return null
+    }
+    const match = parsed.searchParams.get('q')?.match(/^site:instagram\.com\/([A-Za-z0-9._]{1,30})\/$/)
+    return match ? match[1] : null
+  } catch {
+    return null
+  }
 }
 
 /**

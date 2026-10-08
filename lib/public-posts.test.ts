@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import {
   buildProfileSearchPageUrl,
+  getSearchPageUsername,
   buildProfileSearchQuery,
   continuePosts,
   fetchProfilePosts,
@@ -166,8 +167,22 @@ describe('profile search', () => {
   })
 
   it('builds the page a person can open', () => {
-    expect(buildProfileSearchPageUrl('nasa')).toBe('https://duckduckgo.com/?q=site%3Ainstagram.com%2Fnasa%2F')
+    expect(buildProfileSearchPageUrl('nasa')).toBe('https://html.duckduckgo.com/html/?q=site%3Ainstagram.com%2Fnasa%2F')
     expect(buildProfileSearchPageUrl('a b')).toBeNull()
+  })
+})
+
+describe('getSearchPageUsername', () => {
+  it('is the profile a search page was built for', () => {
+    expect(getSearchPageUsername(buildProfileSearchPageUrl('nasa')!)).toBe('nasa')
+    expect(getSearchPageUsername(buildProfileSearchPageUrl('nasa.gov_1')!)).toBe('nasa.gov_1')
+  })
+
+  it('is null for any other address', () => {
+    expect(getSearchPageUsername('https://html.duckduckgo.com/html/?q=hello')).toBeNull()
+    expect(getSearchPageUsername('https://duckduckgo.com/?q=site%3Ainstagram.com%2Fnasa%2F')).toBeNull()
+    expect(getSearchPageUsername('https://evil.net/html/?q=site%3Ainstagram.com%2Fnasa%2F')).toBeNull()
+    expect(getSearchPageUsername('nope')).toBeNull()
   })
 })
 

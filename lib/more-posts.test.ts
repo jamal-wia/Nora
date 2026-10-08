@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'bun:test'
-import { clearMorePostsCache, getMorePostsPage } from './more-posts'
+import { clearMorePostsCache, getMorePostsPage, registerSearchTab, storeSearchResults, takeSearchTab } from './more-posts'
 import { POSTS_PER_PAGE, POSTS_SHOWN_WITHOUT_LOGIN, toEmbedUrl, type PublicPost, type PublicPostsResult } from './public-posts'
 
 const posts = (count: number): PublicPost[] =>
@@ -70,7 +70,7 @@ describe('getMorePostsPage', () => {
   it('hands over the search page when there is a check, and does not keep it', async () => {
     const { fetchPosts, calls } = fetcher({ status: 'challenge' })
     const result = await getMorePostsPage('nasa', 0, 0, fetchPosts)
-    expect(result).toMatchObject({ status: 'challenge', posts: [], hasMore: false, searchUrl: 'https://duckduckgo.com/?q=site%3Ainstagram.com%2Fnasa%2F' })
+    expect(result).toMatchObject({ status: 'challenge', posts: [], hasMore: false, searchUrl: 'https://html.duckduckgo.com/html/?q=site%3Ainstagram.com%2Fnasa%2F' })
     await getMorePostsPage('nasa', 0, 1, fetchPosts)
     expect(calls.count).toBe(2)
   })
@@ -83,5 +83,43 @@ describe('getMorePostsPage', () => {
   it('shows nothing, and says it is fine, when the search found no more than the profile shows', async () => {
     const { fetchPosts } = fetcher({ status: 'ok', posts: posts(POSTS_SHOWN_WITHOUT_LOGIN) })
     expect(await getMorePostsPage('nasa', 0, 0, fetchPosts)).toMatchObject({ status: 'ok', posts: [], hasMore: false })
+  })
+})
+
+describe('storeSearchResults', () => {
+  const result = (code: string, day: number) => ({
+    url: `https://www.instagram.com/nasa/p/${code}/`,
+    title: 'NASA on Instagram',
+    snippet: `1K likes, 2 comments - nasa on May ${day}, 2026: "post ${code}"`,
+  })
+
+  it('keeps what a visit to the search page found, newest first and without the first twelve', async () => {
+    const results = Array.from({ length: 15 }, (_, index) => result(`code${String(index).padStart(2, '0')}`, index + 1))
+    storeSearchResults('nasa', results, 0)
+    let calls = 0
+    const page = await getMorePostsPage('nasa', 0, 1, async () => {
+      calls++
+      return { status: 'error' }
+    })
+    expect(calls).toBe(0)
+    expect(page.posts.map((post) => post.caption)).toEqual(['post code02', 'post code01', 'post code00'])
+  })
+
+  it('ignores results that are not posts of the profile', async () => {
+    storeSearchResults('nasa', [result('abcde', 1), { url: 'https://example.com/', title: '', snippet: '' }], 0)
+    const page = await getMorePostsPage('nasa', 0, 1, async () => ({ status: 'error' }))
+    expect(page).toMatchObject({ status: 'ok', posts: [], hasMore: false })
+  })
+})
+
+describe('search tabs', () => {
+  it('remembers the tab a search page was opened from, once', () => {
+    registerSearchTab('search-tab', 'profile-tab', 'nasa')
+    expect(takeSearchTab('search-tab')).toEqual({ parentTabId: 'profile-tab', username: 'nasa' })
+    expect(takeSearchTab('search-tab')).toBeUndefined()
+  })
+
+  it('knows nothing of a tab it did not open', () => {
+    expect(takeSearchTab('other-tab')).toBeUndefined()
   })
 })

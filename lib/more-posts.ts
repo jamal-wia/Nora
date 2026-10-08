@@ -2,9 +2,13 @@ import {
   POSTS_PER_PAGE,
   POSTS_SHOWN_WITHOUT_LOGIN,
   buildProfileSearchPageUrl,
+  continuePosts,
   fetchProfilePosts,
   toEmbedUrl,
+  toInstagramPost,
+  type PublicPost,
   type PublicPostsResult,
+  type SearchResult,
 } from './public-posts'
 
 export interface MorePostCard {
@@ -30,6 +34,31 @@ const CACHE_TTL_MS = 10 * 60 * 1000
 const cache = new Map<string, { at: number; result: PublicPostsResult }>()
 
 type FetchPosts = typeof fetchProfilePosts
+
+/**
+ * The results a person's own visit to the search page found, for a profile whose search the app
+ * could not run itself. Read in the same way and kept in the same place, so the list continues
+ * from them as from any other.
+ */
+export function storeSearchResults(username: string, results: SearchResult[], now = Date.now()) {
+  const posts = results.map((result) => toInstagramPost(result, username)).filter((post): post is PublicPost => post !== null)
+  // The newest are the ones the profile already shows, whose codes the page does not give.
+  const rest = continuePosts(posts, []).slice(POSTS_SHOWN_WITHOUT_LOGIN)
+  cache.set(username.toLowerCase(), { at: now, result: { status: 'ok', posts: rest } })
+}
+
+// The tab of a search page opened for a profile, and the tab it was opened from, which is where
+// the posts found go.
+const searchTabs = new Map<string, { parentTabId: string; username: string }>()
+
+export const registerSearchTab = (tabId: string, parentTabId: string, username: string) =>
+  searchTabs.set(tabId, { parentTabId, username })
+
+export function takeSearchTab(tabId: string) {
+  const entry = searchTabs.get(tabId)
+  searchTabs.delete(tabId)
+  return entry
+}
 
 /**
  * One page of what to show below a profile. The search runs once per profile and
@@ -70,4 +99,5 @@ export async function getMorePostsPage(
 
 export function clearMorePostsCache() {
   cache.clear()
+  searchTabs.clear()
 }
