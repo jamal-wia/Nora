@@ -438,7 +438,9 @@
     },
     "search": {
       "urlPlaceholder": "Enter a URL",
-      "searchPlaceholder": "Search the web"
+      "searchPlaceholder": "Search the web",
+      "publicPlaceholder": "Search public {{service}} posts",
+      "publicHint": "Finds public posts through DuckDuckGo, which sees your query. No account needed. Results open in the Anonymous profile; posts that need a login stay hidden."
     }
   },
   "toast": {

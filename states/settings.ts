@@ -12,6 +12,7 @@ import {
   getFaviconUrl,
   isValidSearchTemplate,
 } from '@/lib/search'
+import { ANONYMOUS_PROFILE_COLOR, ANONYMOUS_PROFILE_ID, ANONYMOUS_PROFILE_NAME } from '@/lib/anonymous'
 import { DEFAULT_PUBLIC_SEARCH_SERVICE_ID, normalizePublicSearchServiceId } from '@/lib/public-search'
 
 export interface Profile {
@@ -99,6 +100,7 @@ interface Store extends Settings {
   updateCustomSearchProvider: (id: string, name: string, templateUrl: string) => void
   deleteCustomSearchProvider: (id: string) => void
   addProfile: (name: string, color: string) => string | undefined
+  ensureAnonymousProfile: () => string
   updateProfile: (id: string, name: string, color: string) => void
   deleteProfile: (id: string) => void
   setDefaultZoom: (zoom: number) => void
@@ -435,6 +437,12 @@ export const settings$: Observable<Store> = observable<Store>({
     const id = genId()
     settings$.profiles.push({ id, name: trimmedName, color })
     return id
+  },
+  ensureAnonymousProfile: () => {
+    if (!settings$.profiles.get().some((profile) => profile?.id === ANONYMOUS_PROFILE_ID)) {
+      settings$.profiles.push({ id: ANONYMOUS_PROFILE_ID, name: ANONYMOUS_PROFILE_NAME, color: ANONYMOUS_PROFILE_COLOR })
+    }
+    return ANONYMOUS_PROFILE_ID
   },
   updateProfile: (id, name, color) => {
     const profiles = settings$.profiles.get()
