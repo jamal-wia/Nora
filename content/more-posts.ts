@@ -105,32 +105,6 @@ const spinner = () => {
   return svg
 }
 
-const ICON_PATHS = {
-  heart:
-    'M16.792 3.904A4.989 4.989 0 0 1 21.5 9.122c0 3.072-2.652 4.959-5.197 7.222-2.512 2.243-3.865 3.469-4.303 3.752-.477-.309-2.143-1.823-4.303-3.752C5.141 14.072 2.5 12.167 2.5 9.122a4.989 4.989 0 0 1 4.708-5.218 4.21 4.21 0 0 1 3.675 1.941c.84 1.175.98 1.763 1.12 1.763s.278-.588 1.11-1.766a4.17 4.17 0 0 1 3.679-1.938Z',
-  comment: 'M20.656 17.008a9.993 9.993 0 1 0-3.59 3.615L22 22Z',
-}
-
-/** A count with its outline icon, the way Instagram shows likes and comments. */
-const countWithIcon = (icon: keyof typeof ICON_PATHS, count: string) => {
-  const item = create('span', 'display:inline-flex;align-items:center;gap:6px;margin-right:16px;font-weight:600;')
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-  svg.setAttribute('viewBox', '0 0 24 24')
-  svg.setAttribute('width', '18')
-  svg.setAttribute('height', '18')
-  svg.style.cssText = 'display:block;'
-  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-  for (const [name, value] of Object.entries({
-    d: ICON_PATHS[icon], fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linejoin': 'round', 'stroke-linecap': 'round',
-  })) {
-    path.setAttribute(name, value)
-  }
-  svg.appendChild(path)
-  item.appendChild(svg)
-  item.appendChild(document.createTextNode(count))
-  return item
-}
-
 /**
  * What tells the two lists apart: the posts above are the profile's own, the ones below are what
  * a search found. A thin line each side of a small label, the way Instagram marks a change of
@@ -147,9 +121,6 @@ const createDivider = (label: string) => {
   divider.appendChild(line())
   return divider
 }
-
-const formatDate = (date: number) =>
-  new Date(date).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' })
 
 interface EmbedCard {
   frame: HTMLIFrameElement
@@ -347,33 +318,6 @@ export function initMorePosts() {
   const renderCard = (card: MorePostCard, labels: MorePostsLabels) => {
     const wrapper = create('div', `padding:12px 0;border-bottom:1px solid ${DIVIDER};`)
     wrapper.setAttribute('data-more-card', '1')
-
-    // Counts on the left, the date on the right, the way a post's header reads.
-    const header = create('div', 'display:flex;justify-content:space-between;align-items:center;gap:12px;padding:0 16px;font-size:14px;line-height:18px;')
-    const counts = create('div', 'display:flex;align-items:center;')
-    if (card.likes) {
-      counts.appendChild(countWithIcon('heart', card.likes))
-    }
-    if (card.comments) {
-      counts.appendChild(countWithIcon('comment', card.comments))
-    }
-    header.appendChild(counts)
-    if (card.date !== null) {
-      header.appendChild(create('span', `font-size:12px;opacity:${MUTED_OPACITY};`, formatDate(card.date)))
-    }
-    if (card.likes || card.comments || card.date !== null) {
-      wrapper.appendChild(header)
-    }
-
-    if (card.caption) {
-      wrapper.appendChild(
-        create(
-          'div',
-          'padding:6px 16px 0;font-size:14px;line-height:18px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;',
-          card.caption,
-        ),
-      )
-    }
 
     // The picture comes from Instagram's own embed page, loaded only once the card is near the screen.
     const slot = create('div', 'position:relative;max-width:540px;margin:10px auto 0;')
