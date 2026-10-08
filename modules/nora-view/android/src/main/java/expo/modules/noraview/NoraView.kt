@@ -276,7 +276,10 @@ fun shouldNoraOverrideUrlLoading(view: WebView, url: String): Boolean {
   val isFacebookHost = normalizedHost?.endsWith(".facebook.com") == true && normalizedHost != "l.facebook.com"
 
   if (!isInternalScheme) {
-    return handleExternalAppUrl(view.context, url)
+    // A link to an app that is not installed falls back to the web page it stands for.
+    // For a site Nora shows, that page is opened here, in the tab, and not handed to
+    // whichever browser the system has as its default.
+    return handleExternalAppUrl(view.context, url) { target -> view.post { view.loadUrl(target) } }
   }
 
   if (host in VIEW_HOSTS ||
@@ -325,7 +328,37 @@ fun normalizeAcceptTypes(acceptTypes: Array<String>?): Array<String> {
   return mimeTypes.toTypedArray()
 }
 
-fun handleExternalAppUrl(context: Context, url: String): Boolean {
+/**
+ * The address inside Nora that a web address stands for, or null when it is not a
+ * page of a site Nora shows. Instagram's app links name `instagram.com` where Nora's
+ * hosts are `www.instagram.com`, so the `www.` form counts as the same site.
+ */
+fun inAppUrlFor(url: String?, hosts: Collection<String>): String? {
+  if (url.isNullOrEmpty()) {
+    return null
+  }
+  val uri = try {
+    java.net.URI(url)
+  } catch (e: java.net.URISyntaxException) {
+    return null
+  }
+  val scheme = uri.scheme?.lowercase()
+  val host = uri.host?.lowercase()
+  if ((scheme != "http" && scheme != "https") || host == null) {
+    return null
+  }
+  // `applink.instagram.com` is how Instagram names its page when it asks for the app.
+  val site = host.removePrefix("applink.")
+  val target = listOf(host, "www.$host", site, "www.$site").firstOrNull { it in hosts } ?: return null
+  return buildString {
+    append(scheme).append("://").append(target)
+    append(uri.rawPath ?: "")
+    uri.rawQuery?.let { append("?").append(it) }
+    uri.rawFragment?.let { append("#").append(it) }
+  }
+}
+
+fun handleExternalAppUrl(context: Context, url: String, openInApp: ((String) -> Unit)? = null): Boolean {
   val uri = Uri.parse(url)
   val scheme = uri.scheme?.lowercase()
   val isInternalScheme = scheme in INTERNAL_SCHEMES
@@ -334,6 +367,18 @@ fun handleExternalAppUrl(context: Context, url: String): Boolean {
   }
 
   try {
+    if (scheme == "intent" && openInApp != null) {
+      // An intent that names no app is a request for whichever browser is the default.
+      // For a site Nora shows, that is Nora's own tab.
+      val requested = Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
+      if (requested.`package` == null && requested.component == null) {
+        val inApp = inAppUrlFor(requested.dataString, VIEW_HOSTS.toList() + nouController.settings.internalHosts.map { it.lowercase() })
+        if (inApp != null) {
+          openInApp(inApp)
+          return true
+        }
+      }
+    }
     val intent = if (scheme == "intent") {
       Intent.parseUri(url, Intent.URI_INTENT_SCHEME).apply {
         addCategory(Intent.CATEGORY_BROWSABLE)
@@ -360,6 +405,15 @@ fun handleExternalAppUrl(context: Context, url: String): Boolean {
     if (scheme == "intent") {
       try {
         val fallbackIntent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
+        if (openInApp != null) {
+          val hosts = VIEW_HOSTS.toList() + nouController.settings.internalHosts.map { it.lowercase() }
+          val inApp = inAppUrlFor(fallbackIntent.dataString, hosts)
+            ?: inAppUrlFor(fallbackIntent.getStringExtra("browser_fallback_url"), hosts)
+          if (inApp != null) {
+            openInApp(inApp)
+            return true
+          }
+        }
         val fallbackUrl = fallbackIntent.getStringExtra("browser_fallback_url")
         if (!fallbackUrl.isNullOrEmpty()) {
           context.startActivity(
