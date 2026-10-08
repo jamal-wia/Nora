@@ -35,12 +35,13 @@ try {
 async function initObserver() {
   const scheduleAnonymousScan = initAnonymousMode()
   const scheduleMorePostsScan = initMorePosts()
-  initInstagramPostOpener()
+  const checkInstagramPostPage = initInstagramPostOpener()
   const observer = new MutationObserver((mutations) => {
     hideAds(mutations)
     handleDialogs()
     scheduleAnonymousScan()
     scheduleMorePostsScan()
+    checkInstagramPostPage()
   })
   observer.observe(document.documentElement, {
     childList: true,

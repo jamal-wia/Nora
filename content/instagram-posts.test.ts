@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { getMediaId, getPostUrl, isProfileGridPage, toShortcode } from './instagram-posts'
+import { getEmbedUrlForPage, getMediaId, getPostUrl, isProfileGridPage, isWatchAgainLink, toShortcode } from './instagram-posts'
 
 const picture = (key: string) =>
   `https://instagram.fcai20-1.fna.fbcdn.net/v/t51.82787-15/1.jpg?stp=dst-jpg&ig_cache_key=${encodeURIComponent(key)}&_nc_ohc=x`
@@ -58,5 +58,47 @@ describe('isProfileGridPage', () => {
     expect(isProfileGridPage('www.instagram.com', '/explore/')).toBe(false)
     expect(isProfileGridPage('www.instagram.com', '/p/abc/')).toBe(false)
     expect(isProfileGridPage('www.facebook.com', '/nasa/')).toBe(false)
+  })
+})
+
+describe('getEmbedUrlForPage', () => {
+  it('is the embed page of a post, a reel or a video', () => {
+    expect(getEmbedUrlForPage('www.instagram.com', '/p/DeKe4mpkipT/')).toBe('https://www.instagram.com/p/DeKe4mpkipT/embed/')
+    expect(getEmbedUrlForPage('www.instagram.com', '/reel/DeKe4mpkipT')).toBe('https://www.instagram.com/reel/DeKe4mpkipT/embed/')
+    expect(getEmbedUrlForPage('www.instagram.com', '/tv/DeKe4mpkipT/')).toBe('https://www.instagram.com/tv/DeKe4mpkipT/embed/')
+  })
+
+  it('also for the address a profile gives its post', () => {
+    expect(getEmbedUrlForPage('www.instagram.com', '/artefr/reel/DeKe4mpkipT/')).toBe(
+      'https://www.instagram.com/reel/DeKe4mpkipT/embed/',
+    )
+    expect(getEmbedUrlForPage('instagram.com', '/nasa.gov/p/DeKe4mpkipT/')).toBe('https://www.instagram.com/p/DeKe4mpkipT/embed/')
+  })
+
+  it('is nothing for the embed page, a profile or any other page', () => {
+    expect(getEmbedUrlForPage('www.instagram.com', '/p/DeKe4mpkipT/embed/')).toBeNull()
+    expect(getEmbedUrlForPage('www.instagram.com', '/artefr/')).toBeNull()
+    expect(getEmbedUrlForPage('www.instagram.com', '/reels/')).toBeNull()
+    expect(getEmbedUrlForPage('www.instagram.com', '/p/abc/')).toBeNull()
+    expect(getEmbedUrlForPage('www.instagram.com', '/accounts/login/')).toBeNull()
+  })
+
+  it('is nothing on another site, or on one that only looks like Instagram', () => {
+    expect(getEmbedUrlForPage('www.facebook.com', '/p/DeKe4mpkipT/')).toBeNull()
+    expect(getEmbedUrlForPage('instagram.com.evil.net', '/p/DeKe4mpkipT/')).toBeNull()
+  })
+})
+
+describe('isWatchAgainLink', () => {
+  it('is the link an embed page puts over a video that has ended', () => {
+    expect(isWatchAgainLink('https://www.instagram.com/p/DeOjrIyjznF/?utm_source=ig_embed&utm_campaign=embed_video_watch_again')).toBe(true)
+    expect(isWatchAgainLink('https://www.instagram.com/p/DeOjrIyjznF/?utm_campaign=embed_video_watch_again&igsh=x')).toBe(true)
+  })
+
+  it('is no other link of the page', () => {
+    expect(isWatchAgainLink('https://www.instagram.com/p/DeOjrIyjznF/?utm_source=ig_embed&utm_campaign=loggedout')).toBe(false)
+    expect(isWatchAgainLink('https://www.instagram.com/artefr/')).toBe(false)
+    expect(isWatchAgainLink(null)).toBe(false)
+    expect(isWatchAgainLink('')).toBe(false)
   })
 })

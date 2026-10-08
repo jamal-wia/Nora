@@ -54,7 +54,7 @@ import {
   loadCosmeticFilters,
 } from '@/lib/blocklist'
 import { blocklist$ } from '@/states/blocklist'
-import { buildAnonymousModeScript, isAnonymousModeActive } from '@/lib/anonymous'
+import { buildAnonymousModeScript, isAnonymousModeActive, isAnonymousProfile } from '@/lib/anonymous'
 import { getMorePostsPage } from '@/lib/more-posts'
 import { resolveAnonymousTabRequest } from '@/lib/anonymous-tab'
 import { twColor, useTwColor } from '@/lib/theme'
@@ -762,7 +762,13 @@ export const NoraTab: React.FC<{
       case 'new-tab':
         if (!isExternalAppUrl(data.url)) {
           const nextUrl = data.kind === 'image' ? buildImageViewerUrl(data.url, theme) : forceHttps(data.url)
-          tabs$.openTab(nextUrl, { parentTabId: tab.id, source: 'child' })
+          // A tab opened from the Anonymous profile stays in it, and does not go to whichever
+          // profile was chosen last.
+          tabs$.openTab(nextUrl, {
+            parentTabId: tab.id,
+            source: 'child',
+            ...(isAnonymousProfile(tab.profile) ? { profile: tab.profile, profileMode: 'manual' as const } : {}),
+          })
         }
         break
       case 'drop-url':

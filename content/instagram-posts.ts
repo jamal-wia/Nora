@@ -49,6 +49,26 @@ export function getPostUrl(src: string) {
   return code ? `https://www.instagram.com/p/${code}/` : null
 }
 
+const POST_PAGE = /^\/(?:[A-Za-z0-9._]{1,30}\/)?(p|reel|tv)\/([A-Za-z0-9_-]{5,})\/?$/
+
+/**
+ * Where a post's own page should be shown instead: its embed page. The page Instagram
+ * gives a visitor without an account asks for the app in place of the post, or has no
+ * player; the embed page has the player and needs nothing. Null for any other page, and
+ * for the embed page itself.
+ */
+export function getEmbedUrlForPage(hostname: string, pathname: string) {
+  if (!/(^|\.)instagram\.com$/.test(hostname)) {
+    return null
+  }
+  const match = pathname.match(POST_PAGE)
+  return match ? `https://www.instagram.com/${match[1]}/${match[2]}/embed/` : null
+}
+
+/** The link an embed page puts over a video that has ended, to watch it again on Instagram. */
+export const isWatchAgainLink = (href: string | null | undefined) =>
+  Boolean(href && /[?&]utm_campaign=embed_video_watch_again(&|$)/.test(href))
+
 /** A profile or one of its tabs, the pages whose pictures are a grid of posts. */
 export const isProfileGridPage = (hostname: string, pathname: string) =>
   getProfileUsername(hostname, pathname.replace(/\/(reels|tagged)\/?$/, '/')) !== null
@@ -60,8 +80,41 @@ export const isProfileGridPage = (hostname: string, pathname: string) =>
  */
 export function initInstagramPostOpener() {
   if (!/(^|\.)instagram\.com$/.test(document.location.hostname)) {
-    return
+    return () => {}
   }
+
+  // A visitor's post page is swapped for its embed page, also when the site moves to it
+  // without loading a page, which is why this is checked again as the page changes.
+  const redirectPostPage = () => {
+    if (window.top !== window || !window.Nora?.getSettings?.().anonymousMode) {
+      return
+    }
+    const embedUrl = getEmbedUrlForPage(document.location.hostname, document.location.pathname)
+    if (embedUrl) {
+      document.location.replace(embedUrl)
+    }
+  }
+
+  // When a video on an embed page has ended it goes back to the start and offers to watch it
+  // again on Instagram, as a link to the post's own page, which asks for the app. Here it plays
+  // again where it is.
+  document.addEventListener(
+    'click',
+    (event) => {
+      if (!window.Nora?.getSettings?.().anonymousMode || !/\/embed\/?$/.test(document.location.pathname)) {
+        return
+      }
+      const link = (event.target as Element | null)?.closest?.('a')
+      const video = document.querySelector('video')
+      if (video && link && isWatchAgainLink(link.getAttribute('href'))) {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        video.currentTime = 0
+        void video.play().catch(() => {})
+      }
+    },
+    true,
+  )
 
   document.addEventListener(
     'click',
@@ -85,4 +138,7 @@ export function initInstagramPostOpener() {
     },
     true,
   )
+
+  redirectPostPage()
+  return redirectPostPage
 }
