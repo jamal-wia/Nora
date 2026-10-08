@@ -22,6 +22,7 @@ import {
 } from '@/lib/tab-behavior'
 import { removeTrackingParams } from '@/lib/url'
 import { autoProfiles$ } from './auto-profiles'
+import { isAnonymousProfile } from '@/lib/anonymous'
 import {
   AUTO_PROFILE_ID,
   getSiteFromProfileId,
@@ -387,7 +388,10 @@ export const tabs$: Observable<Store> = observable<Store>({
             try {
               const tabUrl = new URL(t.url)
               return tabUrl.hostname === newUrl.hostname &&
-                (!options?.profile || options.profile === AUTO_PROFILE_ID || (t.profile || 'default') === options.profile)
+                (!options?.profile || options.profile === AUTO_PROFILE_ID || (t.profile || 'default') === options.profile) &&
+                // A link from a tab of another profile is not taken into the Anonymous one, which has no account
+                // and hides things: it is only reused by a link that asked for that profile.
+                (!isAnonymousProfile(t.profile) || options?.profile === t.profile)
             } catch {
               return false
             }
