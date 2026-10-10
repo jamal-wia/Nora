@@ -110,6 +110,10 @@
     "downloadOnCobalt": "Download video on cobalt.tools",
     "downloadTab": "Download",
     "cookiesTab": "Site Data",
+    "searchTab": "Search",
+    "publicSearch": "Search public posts",
+    "publicSearchHint": "Searches one social network through DuckDuckGo. Results open in the Anonymous profile.",
+    "publicSearchPlaceholder": "Search public {{service}} posts",
     "exportCookies": "Export current site cookies",
     "exportCookiesHint": "Save cookies for the current site as a cookies.txt file.",
     "exportCookiesButton": "Export cookies.txt",
@@ -249,9 +253,9 @@
     "anonymous": {
       "title": "Anonymous mode",
       "enable": "Hide sign-in prompts",
-      "hint": "In the Anonymous profile, hides pop-ups and banners asking you to log in, sign up or open the app, and unlocks scrolling that a pop-up locked. It does not unlock posts that need an account. Only on sites it has rules for ({{sites}}) and only as long as those sites keep their layout. Tabs in your other profiles are never changed.",
-      "morePosts": "Find more posts through search",
-      "morePostsHint": "On an Instagram profile in the Anonymous profile, replaces the sign-up banner at the bottom with a Continue with search button. Pressing it looks for more of the profile's public posts through DuckDuckGo, which sees the profile name; nothing is sent before that. Only what the search engine has indexed turns up, so posts can be missing, and the first twelve results are left out because the profile already shows about that many."
+      "hint": "Hides log in, sign up and open-in-app prompts in the Anonymous profile. Works on {{sites}}.",
+      "morePosts": "Find more Instagram posts",
+      "morePostsHint": "Adds a Continue with search button below Instagram profiles. It finds more public posts through DuckDuckGo, which sees the profile name."
     },
     "profiles": {
       "description": "Multiple accounts with separate cookies and browsing state.",
@@ -287,7 +291,6 @@
       "custom": "Custom Search Providers",
       "empty": "No custom search providers yet.",
       "urlHint": "Always available for direct URL entry.",
-      "publicHint": "Searches the public posts of one social network through DuckDuckGo, which sees the query. Results open in the Anonymous profile, which is created if it is not there.",
       "addTitle": "Add Custom Search",
       "editTitle": "Edit Custom Search",
       "addAction": "Add Search",
@@ -441,16 +444,16 @@
     "resume": "Resume"
   },
   "morePosts": {
-    "title": "More posts via search",
+    "title": "More posts",
     "more": "Show more",
     "openPost": "Open post",
-    "note": "Found through DuckDuckGo search, so some posts may be missing. The twelve newest results are left out, as the profile above already shows about that many.",
+    "note": "Found through DuckDuckGo. Some posts may be missing.",
     "error": "Could not load more posts.",
-    "empty": "No more posts were found.",
+    "empty": "No more posts found.",
     "continue": "Continue with search",
-    "continueHint": "Carries on with this profile's public posts, found through DuckDuckGo, which sees the profile name.",
-    "searching": "Searching\u2026 If DuckDuckGo asks for a check, you will be taken to it and brought back here.",
-    "unavailable": "Instagram does not show this post here.",
+    "continueHint": "Finds more posts through DuckDuckGo, which sees the profile name.",
+    "searching": "Searching\u2026 You may be asked to pass a DuckDuckGo check.",
+    "unavailable": "This post is unavailable.",
     "retry": "Try again"
   },
   "newTab": {
@@ -460,10 +463,7 @@
     },
     "search": {
       "urlPlaceholder": "Enter a URL",
-      "searchPlaceholder": "Search the web",
-      "publicProvider": "Public posts",
-      "publicPlaceholder": "Search public {{service}} posts",
-      "publicHint": "Finds public posts through DuckDuckGo, which sees your query. No account needed. This tab switches to the Anonymous profile, where the results open; posts that need a login stay hidden."
+      "searchPlaceholder": "Search the web"
     }
   },
   "toast": {

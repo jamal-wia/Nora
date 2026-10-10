@@ -1,18 +1,20 @@
 import { beforeEach, describe, expect, it } from 'bun:test'
 import {
   MAX_SEARCH_RESULTS,
+  MAX_SEARCHES_PER_MINUTE,
   SEARCH_CHECK_AFTER_MS,
   SEARCH_GIVE_UP_AFTER_MS,
   createProfileSearch,
-  isInstagramHost,
   isSearchHost,
   parseLoadMoreRequest,
   sanitizeSearchResults,
+  sanitizeShownShortcodes,
   type ProfileSearchPorts,
 } from './profile-search'
 import { clearMorePostsCache, getMorePostsPage, needsMorePosts } from './more-posts'
 import { buildProfileSearchPageUrl, POSTS_PER_PAGE, POSTS_SHOWN_WITHOUT_LOGIN } from './public-posts'
 import type { MorePostsPayload } from './more-posts'
+import { isInstagramHost } from './instagram'
 
 const SEARCH_URL = buildProfileSearchPageUrl('nasa')!
 
@@ -75,7 +77,7 @@ describe('start', () => {
     expect(search.start('parent', { url: SEARCH_URL }, true)).toBe(true)
     expect(state.openUrls).toEqual([SEARCH_URL])
     expect(state.active).toBe('parent')
-    expect(search.isSearchTab('search1')).toBe(true)
+    expect(state.tabs.has('search1')).toBe(true)
   })
 
   it('does nothing unless the app allows it', () => {
@@ -97,6 +99,48 @@ describe('start', () => {
     const { state, search } = setup()
     for (let i = 0; i < 5; i++) search.start('parent', { url: SEARCH_URL }, true)
     expect(state.openUrls).toHaveLength(1)
+  })
+
+  it('drops the search of a profile the tab has left, and starts the one asked for', () => {
+    const { state, search } = setup()
+    search.start('parent', { url: SEARCH_URL }, true)
+    expect(search.start('parent', { url: buildProfileSearchPageUrl('esa')! }, true)).toBe(true)
+    expect(state.tabs.has('search1')).toBe(false)
+    expect(state.tabs.has('search2')).toBe(true)
+    // The dropped one is said to the tab too, for a page that is still on that profile.
+    expect(state.sent).toHaveLength(1)
+    expect(state.sent[0].payload).toMatchObject({ username: 'nasa', status: 'error' })
+    // The answer goes to the profile that is on screen now.
+    expect(search.complete('search2', { username: 'esa', results: [] }, true)).toBe(true)
+    expect(state.sent.at(-1)?.payload).toMatchObject({ username: 'esa', status: 'ok' })
+  })
+
+  it('leaves out the posts the page says the profile shows', () => {
+    const { state, search } = setup()
+    const shown = ['abc12', 7, '<x>', ...Array.from({ length: POSTS_SHOWN_WITHOUT_LOGIN }, (_, i) => `shown${i}`)]
+    search.start('parent', { url: SEARCH_URL, shown }, true)
+    search.complete('search1', { username: 'nasa', results: [...results, { ...results[0], url: 'https://www.instagram.com/nasa/p/xyz89/' }] }, true)
+    expect(state.sent.at(-1)?.payload.posts.map((post) => post.embedUrl)).toEqual(['https://www.instagram.com/p/xyz89/embed/'])
+  })
+
+  it('takes the same profile in another spelling for the same search, and its answer for that tab', () => {
+    const { state, search } = setup()
+    search.start('parent', { url: buildProfileSearchPageUrl('NASA')! }, true)
+    expect(search.start('parent', { url: SEARCH_URL }, true)).toBe(false)
+    expect(state.openUrls).toHaveLength(1)
+    expect(search.complete('search1', { username: 'nasa', results }, true)).toBe(true)
+    expect(state.sent).toHaveLength(1)
+  })
+
+  it('stops opening search tabs for a page that keeps asking for another profile', () => {
+    const { state, search, advance } = setup()
+    for (let i = 0; i < MAX_SEARCHES_PER_MINUTE * 3; i++) {
+      search.start('parent', { url: buildProfileSearchPageUrl(i % 2 ? 'esa' : 'nasa')! }, true)
+    }
+    expect(state.openUrls).toHaveLength(MAX_SEARCHES_PER_MINUTE)
+    expect(state.sent.at(-1)?.payload.status).toBe('error')
+    advance(61_000)
+    expect(search.start('parent', { url: SEARCH_URL }, true)).toBe(true)
   })
 
   it('tells the tab so when no search tab could be opened', () => {
@@ -145,7 +189,7 @@ describe('complete', () => {
     const { state, search } = setup()
     search.start('parent', { url: SEARCH_URL }, true)
     expect(search.complete('search1', { username: 'nasa', results }, false)).toBe(false)
-    expect(search.isSearchTab('search1')).toBe(true)
+    expect(state.tabs.has('search1')).toBe(true)
     expect(state.sent).toEqual([])
   })
 
@@ -167,6 +211,30 @@ describe('waiting', () => {
     advance(2000)
     advance(2000)
     expect(state.activated).toEqual(['search1'])
+  })
+
+  it('brings the search tab forward at once when its page reports a check, and only its own page', () => {
+    const { state, search } = setup()
+    search.start('parent', { url: SEARCH_URL }, true)
+    expect(search.challenge('search1', false)).toBe(false)
+    expect(search.challenge('parent', true)).toBe(false)
+    expect(state.activated).toEqual([])
+    expect(search.challenge('search1', true)).toBe(true)
+    search.challenge('search1', true)
+    expect(state.activated).toEqual(['search1'])
+  })
+
+  it('does not close a search tab the person was sent to and is still on', () => {
+    const { state, search, advance } = setup()
+    search.start('parent', { url: SEARCH_URL }, true)
+    search.challenge('search1', true)
+    advance(SEARCH_GIVE_UP_AFTER_MS + 2000)
+    expect(state.tabs.has('search1')).toBe(true)
+    expect(state.sent).toEqual([])
+    state.active = 'parent'
+    advance(2000)
+    expect(state.tabs.has('search1')).toBe(false)
+    expect(state.sent.at(-1)?.payload.status).toBe('error')
   })
 
   it('gives up after two minutes, closes the tab and says so', () => {
@@ -236,6 +304,14 @@ describe('sanitizeSearchResults', () => {
   })
 })
 
+describe('sanitizeShownShortcodes', () => {
+  it('keeps what a post code can be', () => {
+    expect(sanitizeShownShortcodes(['DeKe4mpkipT', 'abc-D_1', 'ab', 5, null, 'a b c d e'])).toEqual(['DeKe4mpkipT', 'abc-D_1'])
+    expect(sanitizeShownShortcodes('x')).toEqual([])
+    expect(sanitizeShownShortcodes(Array.from({ length: 200 }, (_, i) => `code${i}x`))).toHaveLength(60)
+  })
+})
+
 describe('parseLoadMoreRequest', () => {
   it('takes a profile-shaped name and a page in range', () => {
     expect(parseLoadMoreRequest({ username: 'nasa', page: 0 })).toEqual({ username: 'nasa', page: 0 })
@@ -279,7 +355,7 @@ describe('carrying a search on', () => {
 
     expect(search.more('parent', 'nasa', 1)).toBe(true)
     expect(new URL(state.openUrls.at(-1)!).searchParams.get('s')).toBe('40')
-    expect(search.isSearchTab('search2')).toBe(true)
+    expect(state.tabs.has('search2')).toBe(true)
 
     search.complete('search2', { username: 'nasa', results: batch('b', POSTS_PER_PAGE, 2010), next: null }, true)
     expect(state.tabs.has('search2')).toBe(false)
@@ -297,7 +373,7 @@ describe('carrying a search on', () => {
     const sentBefore = state.sent.length
     search.complete('search2', { username: 'nasa', results: batch('b', 3, 2010), next }, true)
     expect(state.sent).toHaveLength(sentBefore)
-    expect(search.isSearchTab('search3')).toBe(true)
+    expect(state.tabs.has('search3')).toBe(true)
   })
 
   it('does not search on for a list that is not there, from a tab that already searches, or when there is nothing after it', () => {
@@ -317,6 +393,39 @@ describe('carrying a search on', () => {
     advance(SEARCH_GIVE_UP_AFTER_MS)
     expect(state.sent.at(-1)?.payload).toMatchObject({ page: 1, status: 'error' })
     expect(search.more('parent', 'nasa', 1)).toBe(true)
+  })
+
+  it('opens nothing more while a search for the same profile is under way, and lets it answer', () => {
+    const { state, search } = setup()
+    search.start('parent', { url: SEARCH_URL }, true)
+    search.complete('search1', { username: 'nasa', results: batch('a', POSTS_SHOWN_WITHOUT_LOGIN + POSTS_PER_PAGE + 2, 2030), next }, true)
+    expect(search.more('parent', 'nasa', 1)).toBe(true)
+    const sentBefore = state.sent.length
+    expect(search.more('parent', 'nasa', 1)).toBe(true)
+    expect(state.openUrls).toHaveLength(2)
+    expect(state.sent).toHaveLength(sentBefore)
+  })
+
+  it('answers for the page asked for last, not the one the search was started for', () => {
+    const { state, search } = setup()
+    search.start('parent', { url: SEARCH_URL }, true)
+    search.complete('search1', { username: 'nasa', results: batch('a', POSTS_SHOWN_WITHOUT_LOGIN + POSTS_PER_PAGE * 2 + 2, 2030), next }, true)
+    search.more('parent', 'nasa', 2)
+    // The page was loaded again and starts over from the page before.
+    search.more('parent', 'nasa', 1)
+    search.complete('search2', { username: 'nasa', results: batch('b', POSTS_PER_PAGE, 2010), next: null }, true)
+    expect(state.sent.at(-1)?.payload).toMatchObject({ page: 1, status: 'ok' })
+  })
+
+  it('answers once, with the error, when the next search tab cannot be opened', () => {
+    const { state, search } = setup()
+    search.start('parent', { url: SEARCH_URL }, true)
+    search.complete('search1', { username: 'nasa', results: batch('a', POSTS_SHOWN_WITHOUT_LOGIN + POSTS_PER_PAGE + 2, 2030), next }, true)
+    const sentBefore = state.sent.length
+    state.openReturnsNothing = true
+    expect(search.more('parent', 'nasa', 1)).toBe(true)
+    expect(state.sent).toHaveLength(sentBefore + 1)
+    expect(state.sent.at(-1)?.payload).toMatchObject({ page: 1, status: 'error' })
   })
 
   it('ignores a continuation a page made up', () => {

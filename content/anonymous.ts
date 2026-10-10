@@ -5,6 +5,12 @@ const hiddenAttribute = 'data-nora-anonymous-hidden'
 const promptAttribute = 'data-nora-anonymous-prompt'
 const unpaddedAttribute = 'data-nora-anonymous-unpadded'
 const SCAN_DELAY_MS = 250
+// A match that was not a prompt is looked at again after this long, a few times: a dialog can be drawn
+// before it floats, by a change of class or style that no scan follows.
+const REJECTED_RETRY_MS = 1500
+const MAX_REJECTIONS = 3
+// How long the room a hidden top bar left is looked for, since a page can lay it out late.
+const ROOM_SEARCH_MS = 10_000
 
 /** The style half of the mode. One rule per selector, since a list is dropped whole when one entry does not parse. */
 export function getAnonymousCss(host: string, enabled: boolean, rules: AnonymousRule[] = anonymousRules) {
@@ -101,6 +107,8 @@ interface Handled {
   locksScroll: boolean
   unpadded?: Element
   barHeight: number
+  /** Until when the room the bar left is looked for. */
+  roomUntil: number
 }
 
 /** The script half of the mode, for prompts found only by their contents. Debounced; a failing selector is skipped. */
@@ -111,8 +119,9 @@ export function initAnonymousMode() {
   }
 
   const handled = new Map<Element, Handled>()
-  // Matches already judged not to be prompts.
-  const rejected = new WeakSet<Element>()
+  // Matches judged not to be prompts: how often, and when last.
+  const rejected = new WeakMap<Element, { count: number; at: number }>()
+  let retryTimer: ReturnType<typeof setTimeout> | undefined
   let timer: ReturnType<typeof setTimeout> | undefined
 
   const release = (entry: Handled) => {
@@ -141,6 +150,15 @@ export function initAnonymousMode() {
     if (entry.barHeight <= 0 || (entry.unpadded?.isConnected && entry.unpadded.hasAttribute(unpaddedAttribute))) {
       return
     }
+    const now = Date.now()
+    if (entry.unpadded) {
+      // The page redrew what was found before: looked for afresh.
+      entry.unpadded = undefined
+      entry.roomUntil = now + ROOM_SEARCH_MS
+    }
+    if (now > entry.roomUntil) {
+      return
+    }
     const padded = findPaddedAncestor(
       document.elementFromPoint(window.innerWidth / 2, entry.barHeight + 4),
       entry.barHeight,
@@ -165,6 +183,8 @@ export function initAnonymousMode() {
       }
     }
 
+    const now = Date.now()
+    let retry = false
     const hide = (
       rule: { selectors: string[]; locksScroll: boolean },
       findTarget: (match: Element) => Element | null,
@@ -172,17 +192,25 @@ export function initAnonymousMode() {
       for (const selector of rule.selectors) {
         try {
           for (const match of document.querySelectorAll(selector)) {
-            if (handled.has(match) || rejected.has(match)) {
+            const before = rejected.get(match)
+            if (handled.has(match) || (before && before.count >= MAX_REJECTIONS)) {
+              continue
+            }
+            if (before && now - before.at < REJECTED_RETRY_MS) {
+              // Not yet, and not forgotten: the timer that is running may fire too early for this one.
+              retry = true
               continue
             }
             const target = findTarget(match)
             if (!target) {
-              rejected.add(match)
+              const count = (before?.count ?? 0) + 1
+              rejected.set(match, { count, at: now })
+              retry ||= count < MAX_REJECTIONS
               continue
             }
             const { height, top } = target.getBoundingClientRect()
             target.setAttribute(hiddenAttribute, '1')
-            handled.set(match, { selector, target, locksScroll: rule.locksScroll, barHeight: top <= 1 ? height : 0 })
+            handled.set(match, { selector, target, locksScroll: rule.locksScroll, barHeight: top <= 1 ? height : 0, roomUntil: now + ROOM_SEARCH_MS })
           }
         } catch {
           // Unsupported selector or unqueryable page: the other rules still run.
@@ -208,6 +236,13 @@ export function initAnonymousMode() {
 
     for (const entry of handled.values()) {
       giveBackRoom(entry)
+    }
+    // Looked at again by itself: nothing on a quiet page would bring the next scan.
+    if (retry && retryTimer === undefined) {
+      retryTimer = setTimeout(() => {
+        retryTimer = undefined
+        schedule()
+      }, REJECTED_RETRY_MS)
     }
     const root = document.documentElement
     if ([...handled.values()].some((entry) => entry.locksScroll)) {

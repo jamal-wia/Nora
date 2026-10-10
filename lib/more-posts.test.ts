@@ -19,6 +19,10 @@ describe('toEmbedUrl', () => {
     expect(toEmbedUrl({ url: 'https://www-fallback.instagram.com/nasa/p/abc/' })).toBe('https://www.instagram.com/p/abc/embed/')
   })
 
+  it('knows the same kinds of post page as the redirect does', () => {
+    expect(toEmbedUrl({ url: 'https://www.instagram.com/tv/abc12/' })).toBe('https://www.instagram.com/tv/abc12/embed/')
+  })
+
   it('refuses anything else', () => {
     expect(toEmbedUrl({ url: 'https://example.com/nasa/p/abc/' })).toBeNull()
     expect(toEmbedUrl({ url: 'https://www.instagram.com/nasa/' })).toBeNull()
@@ -34,7 +38,7 @@ describe('getMorePostsPage', () => {
       status: 'idle',
       posts: [],
       hasMore: false,
-      searchUrl: 'https://html.duckduckgo.com/html/?q=site%3Ainstagram.com%2Fnasa%2F',
+      searchUrl: 'https://html.duckduckgo.com/html/?q=site%3Ainstagram.com%2Fnasa%2F#nora',
     })
   })
 
@@ -55,9 +59,29 @@ describe('getMorePostsPage', () => {
     expect(getMorePostsPage('nasa', 0, 1).posts).toHaveLength(3)
   })
 
+  it('leaves out exactly the posts the profile says it shows, however few were found', () => {
+    const shown = ['code000', 'code001', ...Array.from({ length: POSTS_SHOWN_WITHOUT_LOGIN - 2 }, (_, i) => `other${i}`)]
+    storeSearchResults('nasa', results(10), null, 0, shown)
+    const page = getMorePostsPage('nasa', 0, 1)
+    expect(page.posts).toHaveLength(8)
+    expect(page.posts.some((post) => post.embedUrl.includes('code000'))).toBe(false)
+  })
+
+  it('takes the tiles the page could not read to be the newest of what is left', () => {
+    // Three of twelve tiles read: the nine newest of the rest are the profile's own too.
+    storeSearchResults('nasa', results(POSTS_SHOWN_WITHOUT_LOGIN + 5), null, 0, ['code000', 'code001', 'code002'])
+    expect(getMorePostsPage('nasa', 0, 1).posts).toHaveLength(5)
+  })
+
   it('offers to search again once what was found is old', () => {
     storeSearchResults('nasa', results(POSTS_SHOWN_WITHOUT_LOGIN + 3), null, 0)
     expect(getMorePostsPage('nasa', 0, 11 * 60 * 1000).status).toBe('idle')
+  })
+
+  it('keeps a list that is being read', () => {
+    storeSearchResults('nasa', results(POSTS_SHOWN_WITHOUT_LOGIN + 3), null, 0)
+    expect(getMorePostsPage('nasa', 0, 6 * 60 * 1000).status).toBe('ok')
+    expect(getMorePostsPage('nasa', 0, 12 * 60 * 1000).status).toBe('ok')
   })
 
   it('says there is nothing more when the search found no more than the profile shows', () => {

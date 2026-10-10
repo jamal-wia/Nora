@@ -27,7 +27,6 @@ import {
   isValidSearchTemplate,
 } from '@/lib/search'
 import { SearchProviderIcon } from '../service/SearchProviderIcon'
-import { getProviderLabel } from '../service/searchProviderLabel'
 import { showToast } from '@/lib/toast'
 import {
   enableMentionNotifications,
@@ -752,6 +751,9 @@ export const SettingsProfilesContent = () => {
 
   return (
     <View className="pb-4">
+      <View className="mb-6">
+        <ProfileManager />
+      </View>
       <NouText className={subheaderCls}>{t('settings.profiles.sessionMode')}</NouText>
       <SettingsSurface className="mb-10">
         <SettingsRow isLast>
@@ -802,8 +804,7 @@ export const SettingsProfilesContent = () => {
           />
         </SettingsRow>
       </SettingsSurface>
-      <ProfileManager />
-      <View className="mt-10">
+      <View>
         <NouText className={subheaderCls}>{t('settings.profiles.injectCookie')}</NouText>
         <View className={surfaceCls}>
           <View className="px-4 py-4">
@@ -1039,12 +1040,9 @@ export const SettingsSearchContent = () => {
                     <NouSwitch
                       label={
                         <View className="pr-3">
-                          <NouText>{getProviderLabel(provider)}</NouText>
+                          <NouText>{provider.name}</NouText>
                           {provider.id === 'url' ? (
                             <NouText className="mt-1 text-sm leading-5 text-zinc-600 dark:text-zinc-400">{t('settings.search.urlHint')}</NouText>
-                          ) : null}
-                          {provider.kind === 'public' ? (
-                            <NouText className="mt-1 text-sm leading-5 text-zinc-600 dark:text-zinc-400">{t('settings.search.publicHint')}</NouText>
                           ) : null}
                         </View>
                       }

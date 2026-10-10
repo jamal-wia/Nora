@@ -73,7 +73,7 @@ interface Store {
 
   openTab: (url: string, options?: OpenTabOptions) => string | undefined
   duplicateTab: (tabId: string) => string | undefined
-  closeTab: (index: number) => void
+  closeTab: (index: number, options?: { forget?: boolean }) => void
   closeTabsByIds: (tabIds: string[]) => void
   closeAll: () => void
   deleteProfileData: (profileId: string) => void
@@ -439,7 +439,7 @@ export const tabs$: Observable<Store> = observable<Store>({
     return tab.id
   },
 
-  closeTab: (index) => {
+  closeTab: (index, options) => {
     const tabs = tabs$.tabs.get()
     const closedTab = tabs[index]
     const tabId = closedTab?.id
@@ -461,7 +461,10 @@ export const tabs$: Observable<Store> = observable<Store>({
       adjacentTabId,
     })
 
-    pushRecentlyClosedTabs(closedTab ? [closedTab] : [])
+    // A tab the app opened for its own work is not one to offer for reopening.
+    if (!options?.forget) {
+      pushRecentlyClosedTabs(closedTab ? [closedTab] : [])
+    }
     tabs$.tabs.splice(index, 1)
     if (tabId in tabs$.orders.get()) {
       tabs$.orders[tabId].delete()

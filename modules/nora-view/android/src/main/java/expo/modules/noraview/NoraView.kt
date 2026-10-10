@@ -268,7 +268,7 @@ fun installGoogleOAuthShim(webView: WebView) {
 
 /**
  * @param openInApp when set, a link that asks for an app can be answered by loading its web page
- * here, in the tab; it is set only where the person turned that on, see [inAppUrlFor].
+ * here, in the tab; it is set only while the anonymous mode is on for the tab, see [inAppUrlFor].
  */
 fun shouldNoraOverrideUrlLoading(view: WebView, url: String, openInApp: ((String) -> Unit)? = null): Boolean {
   val uri = Uri.parse(url)
@@ -373,15 +373,14 @@ fun handleExternalAppUrl(context: Context, url: String, openInApp: ((String) -> 
 
   try {
     if (scheme == "intent" && openInApp != null) {
-      // An intent that names no app is a request for whichever browser is the default.
-      // For a site Nora shows, that is Nora's own tab.
+      // A link that is itself a page of a site Nora shows is answered with that page, in the tab -- also
+      // when it names the site's app, which would open it signed in. A link to anything else, such as
+      // another app's own scheme, goes to that app as before; its fallback page is only for when it is missing.
       val requested = Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
-      if (requested.`package` == null && requested.component == null) {
-        val inApp = inAppUrlFor(requested.dataString, inAppHosts())
-        if (inApp != null) {
-          openInApp(inApp)
-          return true
-        }
+      val inApp = inAppUrlFor(requested.dataString, inAppHosts())
+      if (inApp != null) {
+        openInApp(inApp)
+        return true
       }
     }
     val intent = if (scheme == "intent") {
@@ -410,16 +409,14 @@ fun handleExternalAppUrl(context: Context, url: String, openInApp: ((String) -> 
     if (scheme == "intent") {
       try {
         val fallbackIntent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
+        val fallbackUrl = fallbackIntent.getStringExtra("browser_fallback_url")
         if (openInApp != null) {
-          val hosts = inAppHosts()
-          val inApp = inAppUrlFor(fallbackIntent.dataString, hosts)
-            ?: inAppUrlFor(fallbackIntent.getStringExtra("browser_fallback_url"), hosts)
+          val inApp = inAppUrlFor(fallbackUrl, inAppHosts())
           if (inApp != null) {
             openInApp(inApp)
             return true
           }
         }
-        val fallbackUrl = fallbackIntent.getStringExtra("browser_fallback_url")
         if (!fallbackUrl.isNullOrEmpty()) {
           context.startActivity(
             Intent(Intent.ACTION_VIEW, Uri.parse(fallbackUrl)).apply {
@@ -475,6 +472,8 @@ class NoraView(context: Context, appContext: AppContext) : ExpoView(context, app
   internal var userAgent: String? = null
   private var profileSet = false
   private var profileName = "default"
+  /** Set by the app while the anonymous mode is on for the site this tab shows. */
+  internal var openAppLinksInTab = false
 
   private var popupContainer: FrameLayout? = null
   private var popupWebView: WebView? = null
@@ -863,7 +862,7 @@ class NoraView(context: Context, appContext: AppContext) : ExpoView(context, app
           }
 
           /**
-           * [allowInApp]: this is the person's own tap, on the page itself, in the Anonymous profile --
+           * [allowInApp]: this is the person's own tap, on the page itself, with the anonymous mode on --
            * the one place a link that asks for an app is answered by opening its page in the tab.
            */
           private fun overrideUrlLoading(view: WebView, url: String, allowInApp: Boolean): Boolean {
@@ -897,8 +896,8 @@ class NoraView(context: Context, appContext: AppContext) : ExpoView(context, app
 
           override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             // Not a frame of the page, which a page can send anywhere without being asked, and not without
-            // a tap. Neither is any other profile: for them an app link is handled as it always was.
-            val allowInApp = request.isForMainFrame && request.hasGesture() && profileName == "anonymous"
+            // a tap. Without the anonymous mode an app link is handled as it always was.
+            val allowInApp = request.isForMainFrame && request.hasGesture() && openAppLinksInTab
             return overrideUrlLoading(view, request.url.toString(), allowInApp)
           }
 

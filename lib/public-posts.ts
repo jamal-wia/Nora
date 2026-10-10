@@ -6,6 +6,8 @@
  * the result and the list is sorted by it here.
  */
 
+import { INSTAGRAM_POST_KINDS, INSTAGRAM_USERNAME_PATTERN, isInstagramHost, isInstagramUsername } from './instagram'
+
 export interface SearchResult {
   url: string
   title: string
@@ -17,8 +19,6 @@ export interface PublicPost {
   shortcode: string
   /** Epoch milliseconds, UTC, or null when the result carries no date. */
   date: number | null
-  likes: string | null
-  comments: string | null
   caption: string
 }
 
@@ -77,12 +77,21 @@ function parseSnippetDate(text: string) {
   return month === -1 ? null : Date.UTC(Number(match[3]), month, Number(match[2]))
 }
 
+/**
+ * Whether a text names a profile, as a whole name: `john.doe` is not named by `john_doe`, nor `john` by
+ * `john.doe`. A full stop that ends a sentence after the name does not count against it.
+ */
+export function mentionsUsername(text: string, username: string) {
+  const name = username.replace(/[^\w.]/g, '').replace(/\./g, '\\.')
+  return Boolean(name) && new RegExp(`(^|[^\\w.])${name}(?!\\w|\\.\\w)`, 'i').test(text)
+}
+
 /** The post a result points at, with what its description says about it. Null for anything else. */
 export function toInstagramPost(result: SearchResult, username: string): PublicPost | null {
   let path: string[]
   try {
     const url = new URL(result.url)
-    if (!/(^|\.)instagram\.com$/.test(url.hostname)) {
+    if (!isInstagramHost(url.hostname)) {
       return null
     }
     path = url.pathname.split('/').filter(Boolean)
@@ -94,22 +103,19 @@ export function toInstagramPost(result: SearchResult, username: string): PublicP
   const offset = path[0]?.toLowerCase() === username.toLowerCase() ? 1 : 0
   const kind = path[offset]
   const shortcode = path[offset + 1]
-  if ((kind !== 'p' && kind !== 'reel') || !shortcode || path.length !== offset + 2) {
+  if (!INSTAGRAM_POST_KINDS.includes(kind) || !shortcode || path.length !== offset + 2) {
     return null
   }
   // A result for another account's post that merely mentions this one is not this profile's.
-  if (offset === 0 && !new RegExp(`\\b${username.replace(/[^\w.]/g, '')}\\b`, 'i').test(result.snippet.slice(0, 160))) {
+  if (offset === 0 && !mentionsUsername(result.snippet.slice(0, 160), username)) {
     return null
   }
 
-  const counts = result.snippet.match(/^([\d.,]+[KM]?) likes?, ([\d.,]+[KM]?) comments?/i)
   const caption = result.snippet.match(/: "([\s\S]*?)"?$/)
   return {
     url: result.url,
     shortcode,
     date: parseSnippetDate(result.snippet),
-    likes: counts?.[1] ?? null,
-    comments: counts?.[2] ?? null,
     caption: caption?.[1]?.trim() ?? '',
   }
 }
@@ -142,12 +148,13 @@ export function continuePosts(posts: PublicPost[], shownShortcodes: Iterable<str
   })
 }
 
-const USERNAME = /^[A-Za-z0-9._]{1,30}$/
 const SEARCH_ENDPOINT = 'https://html.duckduckgo.com/html/'
+// On the address of a search the app opened, so that the same search typed by hand is left alone.
+const SEARCH_MARK = '#nora'
 
 /** The search that lists a profile's posts, or null for a name that is not a profile name. */
 export function buildProfileSearchQuery(username: string) {
-  return USERNAME.test(username) ? `site:instagram.com/${username}/` : null
+  return isInstagramUsername(username) ? `site:instagram.com/${username}/` : null
 }
 
 /**
@@ -157,17 +164,19 @@ export function buildProfileSearchQuery(username: string) {
  */
 export function buildProfileSearchPageUrl(username: string) {
   const query = buildProfileSearchQuery(username)
-  return query ? `${SEARCH_ENDPOINT}?q=${encodeURIComponent(query)}` : null
+  return query ? `${SEARCH_ENDPOINT}?q=${encodeURIComponent(query)}${SEARCH_MARK}` : null
 }
+
+const PROFILE_QUERY = new RegExp(`^site:instagram\\.com/(${INSTAGRAM_USERNAME_PATTERN})/$`)
 
 /** The profile a search page of `buildProfileSearchPageUrl` is for, or null for any other address. */
 export function getSearchPageUsername(url: string) {
   try {
     const parsed = new URL(url)
-    if (parsed.origin + parsed.pathname !== SEARCH_ENDPOINT) {
+    if (parsed.origin + parsed.pathname !== SEARCH_ENDPOINT || parsed.hash !== SEARCH_MARK) {
       return null
     }
-    const match = parsed.searchParams.get('q')?.match(/^site:instagram\.com\/([A-Za-z0-9._]{1,30})\/$/)
+    const match = parsed.searchParams.get('q')?.match(PROFILE_QUERY)
     return match ? match[1] : null
   } catch {
     return null
@@ -243,7 +252,7 @@ export function buildContinuationPageUrl(username: string, continuation: SearchC
     vqd: continuation.vqd,
     kl: continuation.kl,
   })
-  return `${SEARCH_ENDPOINT}?${params}`
+  return `${SEARCH_ENDPOINT}?${params}${SEARCH_MARK}`
 }
 
 /**
@@ -260,7 +269,9 @@ export function isResultsPage(html: string) {
  * It is never answered or worked around: the caller sends the person to the page.
  */
 export function isChallengePage(html: string) {
-  return parseSearchResults(html).length === 0 && /anomaly|captcha|challenge-form|unusual traffic/i.test(html)
+  // Without the query the page echoes: a profile can be called `captcha.memes`.
+  const page = html.replace(/site(?::|%3A)instagram\.com(?:\/|%2F)[A-Za-z0-9._]+/gi, '')
+  return parseSearchResults(html).length === 0 && /anomaly|captcha|challenge-form|unusual traffic/i.test(page)
 }
 
 /** How many posts of a profile Instagram shows without an account, and so how many of the newest results are left out. */
@@ -275,9 +286,9 @@ export function toEmbedUrl(post: Pick<PublicPost, 'url'>) {
   try {
     const url = new URL(post.url)
     const path = url.pathname.split('/').filter(Boolean)
-    const kindIndex = path.findIndex((part) => part === 'p' || part === 'reel')
+    const kindIndex = path.findIndex((part) => INSTAGRAM_POST_KINDS.includes(part))
     const shortcode = path[kindIndex + 1]
-    if (kindIndex === -1 || !shortcode || !/(^|\.)instagram\.com$/.test(url.hostname)) {
+    if (kindIndex === -1 || !shortcode || !isInstagramHost(url.hostname)) {
       return null
     }
     return `https://www.instagram.com/${path[kindIndex]}/${encodeURIComponent(shortcode)}/embed/`

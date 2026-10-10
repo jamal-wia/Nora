@@ -7,6 +7,7 @@ import {
   buildProfileSearchQuery,
   continuePosts,
   isChallengePage,
+  mentionsUsername,
   isResultsPage,
   parseContinuation,
   parseProfileSearchRequest,
@@ -50,8 +51,6 @@ const post = (shortcode: string, date: number | null): PublicPost => ({
   url: `https://www.instagram.com/nasa/p/${shortcode}/`,
   shortcode,
   date,
-  likes: null,
-  comments: null,
   caption: '',
 })
 
@@ -84,6 +83,23 @@ describe('parseSearchResults', () => {
   })
 })
 
+describe('mentionsUsername', () => {
+  it('finds a name as a whole name', () => {
+    expect(mentionsUsername('1K likes - nasa on May 1', 'nasa')).toBe(true)
+    expect(mentionsUsername('1K likes - NASA on May 1', 'nasa')).toBe(true)
+    expect(mentionsUsername('1K likes - john.doe on May 1', 'john.doe')).toBe(true)
+    expect(mentionsUsername('A post by nasa.', 'nasa')).toBe(true)
+    expect(mentionsUsername('1K likes - john.doe. on May 1', 'john.doe.')).toBe(true)
+  })
+
+  it('does not take another name for it', () => {
+    expect(mentionsUsername('1K likes - john_doe on May 1', 'john.doe')).toBe(false)
+    expect(mentionsUsername('1K likes - john.doe on May 1', 'john')).toBe(false)
+    expect(mentionsUsername('1K likes - nasahq on May 1', 'nasa')).toBe(false)
+    expect(mentionsUsername('1K likes - my.nasa on May 1', 'nasa')).toBe(false)
+  })
+})
+
 describe('toInstagramPost', () => {
   const [profile, reel, photo] = parseSearchResults(page)
 
@@ -92,11 +108,9 @@ describe('toInstagramPost', () => {
       url: 'https://www.instagram.com/nasa/reel/DbbSK7rD-SW/',
       shortcode: 'DbbSK7rD-SW',
       date: Date.UTC(2026, 6, 30),
-      likes: '160K',
-      comments: '1,187',
       caption: expect.stringContaining("We're about to see the bigger picture."),
     })
-    expect(toInstagramPost(photo, 'nasa')).toMatchObject({ shortcode: 'DWwjA6qFG8G', date: Date.UTC(2026, 3, 5), likes: '2M' })
+    expect(toInstagramPost(photo, 'nasa')).toMatchObject({ shortcode: 'DWwjA6qFG8G', date: Date.UTC(2026, 3, 5) })
   })
 
   it('skips the profile page and other things that are not a post', () => {
@@ -158,7 +172,7 @@ describe('profile search', () => {
   })
 
   it('builds the page a person can open', () => {
-    expect(buildProfileSearchPageUrl('nasa')).toBe('https://html.duckduckgo.com/html/?q=site%3Ainstagram.com%2Fnasa%2F')
+    expect(buildProfileSearchPageUrl('nasa')).toBe('https://html.duckduckgo.com/html/?q=site%3Ainstagram.com%2Fnasa%2F#nora')
     expect(buildProfileSearchPageUrl('a b')).toBeNull()
   })
 })
@@ -171,6 +185,8 @@ describe('getSearchPageUsername', () => {
 
   it('is null for any other address', () => {
     expect(getSearchPageUsername('https://html.duckduckgo.com/html/?q=hello')).toBeNull()
+    // The same search, typed by hand: not one the app opened.
+    expect(getSearchPageUsername('https://html.duckduckgo.com/html/?q=site%3Ainstagram.com%2Fnasa%2F')).toBeNull()
     expect(getSearchPageUsername('https://duckduckgo.com/?q=site%3Ainstagram.com%2Fnasa%2F')).toBeNull()
     expect(getSearchPageUsername('https://evil.net/html/?q=site%3Ainstagram.com%2Fnasa%2F')).toBeNull()
     expect(getSearchPageUsername('nope')).toBeNull()
@@ -202,12 +218,18 @@ describe('isChallengePage', () => {
   it('does not take an empty result page for one', () => {
     expect(isChallengePage('<html><body>No results found.</body></html>')).toBe(false)
   })
+
+  it('is not misled by a profile whose name is a word a check uses', () => {
+    const echoed = '<input name="q" value="site:instagram.com/captcha.memes/"><a href="/html/?q=site%3Ainstagram.com%2Fanomaly_art%2F">x</a>'
+    expect(isChallengePage(`<html><body>${echoed}No results found.</body></html>`)).toBe(false)
+    expect(isChallengePage(`<html><body>${echoed}<form id="challenge-form"></form></body></html>`)).toBe(true)
+  })
 })
 
 describe('parseProfileSearchRequest', () => {
   it('takes the search page for the posts of a profile, and says which profile', () => {
-    expect(parseProfileSearchRequest('https://html.duckduckgo.com/html/?q=site%3Ainstagram.com%2Fnasa%2F')).toEqual({
-      url: 'https://html.duckduckgo.com/html/?q=site%3Ainstagram.com%2Fnasa%2F',
+    expect(parseProfileSearchRequest('https://html.duckduckgo.com/html/?q=site%3Ainstagram.com%2Fnasa%2F#nora')).toEqual({
+      url: 'https://html.duckduckgo.com/html/?q=site%3Ainstagram.com%2Fnasa%2F#nora',
       username: 'nasa',
     })
   })

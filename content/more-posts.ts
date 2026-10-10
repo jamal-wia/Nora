@@ -2,6 +2,8 @@ import { emit } from './utils'
 import type { MorePostCard, MorePostsLabels, MorePostsMessage } from '../lib/more-posts'
 import { noraMorePostsEvent, noraSettingsEvent } from './nora'
 import { getAnonymousCss } from './anonymous'
+import { getMediaId, toShortcode } from './instagram-posts'
+import { getProfileUsername, isInstagramHost } from '../lib/instagram'
 import {
   EMBED_AUTOMATIC_RETRIES,
   EMBED_LOAD_TIMEOUT_MS,
@@ -13,21 +15,7 @@ import {
 } from './embed-messages'
 
 const SCAN_DELAY_MS = 400
-const hiddenAttribute = 'data-nora-more-posts-hidden'
-
-// Paths on instagram.com that are a page of their own and not somebody's profile.
-const reservedPaths = new Set([
-  'about', 'accounts', 'api', 'challenge', 'developer', 'direct', 'directory', 'explore', 'legal', 'p', 'reel', 'reels', 'stories', 'tv', 'web',
-])
-
-/** The profile this page is, or null for any other page. */
-export function getProfileUsername(hostname: string, pathname: string) {
-  if (hostname !== 'instagram.com' && !hostname.endsWith('.instagram.com')) {
-    return null
-  }
-  const match = pathname.match(/^\/([A-Za-z0-9._]{1,30})\/?$/)
-  return match && !reservedPaths.has(match[1].toLowerCase()) ? match[1] : null
-}
+const MIN_TILE_WIDTH = 80
 
 const isOn = () => Boolean(window.Nora?.getSettings?.().anonymousMorePosts)
 
@@ -132,8 +120,31 @@ interface EmbedCard {
   timer: ReturnType<typeof setTimeout> | undefined
 }
 
+/** The codes of the posts a profile's grid shows, read off its pictures, so that a search leaves those out. */
+const getShownShortcodes = (grid: HTMLElement) => {
+  const codes = new Set<string>()
+  for (const picture of grid.querySelectorAll('img')) {
+    // A tile's picture, not an icon or a profile photo that happens to sit in the grid's block.
+    if (picture.getBoundingClientRect().width < MIN_TILE_WIDTH) {
+      continue
+    }
+    const id = getMediaId(picture.currentSrc || picture.src)
+    const code = id && toShortcode(id)
+    if (code) {
+      codes.add(code)
+    }
+  }
+  return [...codes]
+}
+
 /** Shows the block below a profile and fills it with what the app finds. */
 export function initMorePosts() {
+  // Only a page of Instagram has a profile to continue: other sites are left alone, and so are frames,
+  // which is what the posts of the list themselves are shown in.
+  if (!isInstagramHost(document.location.hostname) || window.top !== window) {
+    return () => {}
+  }
+
   const embeds = new Set<EmbedCard>()
   const pendingEmbeds = new WeakMap<HTMLIFrameElement, EmbedCard>()
 
@@ -187,8 +198,16 @@ export function initMorePosts() {
       return
     }
     try {
-      const rendered = embed.frame.contentDocument?.querySelector('.Embed')
-      if (rendered && rendered.getBoundingClientRect().height > MIN_RENDERED_EMBED_HEIGHT) {
+      // A frame on another origin (a profile on instagram.com, its embeds on www.) cannot be looked into:
+      // its own word that it is on screen is all there is.
+      const doc = embed.frame.contentDocument
+      if (!doc) {
+        return
+      }
+      // Blank is a page with neither the post's block nor a picture or video at a height that shows
+      // something. A small picture does not count: the header's is there on a page with no post in it.
+      const shows = (element: Element) => element.getBoundingClientRect().height > MIN_RENDERED_EMBED_HEIGHT
+      if ([...doc.querySelectorAll('.Embed, img, video')].some(shows)) {
         return
       }
     } catch {
@@ -205,8 +224,9 @@ export function initMorePosts() {
     // The link leads to the same page, which would not show the post either.
     embed.wrapper.querySelector<HTMLElement>('[data-open-post]')?.style.setProperty('display', 'none')
     embed.wrapper.querySelector('[data-embed-unavailable]')?.remove()
-    const note = create('div', `padding:20px 16px 4px;text-align:center;font-size:14px;line-height:18px;opacity:${MUTED_OPACITY};`, embed.labels.unavailable)
+    const note = create('div', 'padding:20px 16px 4px;text-align:center;font-size:14px;line-height:18px;')
     note.setAttribute('data-embed-unavailable', '1')
+    note.appendChild(create('div', `opacity:${MUTED_OPACITY};`, embed.labels.unavailable))
     const retry = create('button', `${buttonCss}margin:12px auto 0;`, embed.labels.retry)
     retry.type = 'button'
     retry.addEventListener('click', () => {
@@ -243,7 +263,7 @@ export function initMorePosts() {
   })
 
   let timer: ReturnType<typeof setTimeout> | undefined
-  let current: { username: string; block: HTMLElement; gate: HTMLElement; page: number; loading: boolean } | null = null
+  let current: { username: string; block: HTMLElement; gate: HTMLElement; grid: HTMLElement; page: number; loading: boolean } | null = null
   let observer: IntersectionObserver | undefined
   let moreObserver: IntersectionObserver | undefined
 
@@ -253,7 +273,6 @@ export function initMorePosts() {
     }
     current.block.remove()
     current.gate.style.removeProperty('display')
-    current.gate.removeAttribute(hiddenAttribute)
     current = null
     for (const embed of embeds) {
       clearTimeout(embed.timer)
@@ -349,7 +368,7 @@ export function initMorePosts() {
       }
       renderStatus(block, null)
       block.querySelector('[data-more-status]')?.appendChild(create('div', `margin-top:10px;font-size:12px;opacity:${MUTED_OPACITY};`, payload.labels.searching))
-      emit('search-profile-posts', { url: payload.searchUrl })
+      emit('search-profile-posts', { url: payload.searchUrl, shown: current ? getShownShortcodes(current.grid) : [] })
     })
     status.appendChild(button)
     status.appendChild(create('div', `margin-top:10px;font-size:12px;line-height:16px;opacity:${MUTED_OPACITY};`, payload.labels.continueHint))
@@ -399,7 +418,8 @@ export function initMorePosts() {
 
   const onPayload = (event: Event) => {
     const payload = (event as CustomEvent<MorePostsMessage>).detail
-    if (!current || payload?.username !== current.username) {
+    // Names are compared without case, as Instagram does: the answer may spell it as an earlier address did.
+    if (!current || typeof payload?.username !== 'string' || payload.username.toLowerCase() !== current.username.toLowerCase()) {
       return
     }
     current.loading = false
@@ -482,10 +502,9 @@ export function initMorePosts() {
     )
     // Straight under the grid, so the list carries on from it.
     const block = create('div', 'margin:0;padding:0;')
-    found.gate.setAttribute(hiddenAttribute, '1')
     found.gate.style.setProperty('display', 'none', 'important')
     found.grid.insertAdjacentElement('afterend', block)
-    current = { username, block, gate: found.gate, page: 0, loading: false }
+    current = { username, block, gate: found.gate, grid: found.grid, page: 0, loading: false }
     renderStatus(block, null)
     request(0)
   }

@@ -4,8 +4,6 @@
  * operator, which is what the user would otherwise have to type by hand.
  */
 
-export const PUBLIC_SEARCH_PROVIDER_ID = 'public-search'
-
 /**
  * The domain each service's public pages live on. Only these ever reach the
  * `site:` operator, so a stored or imported value can't widen the search to

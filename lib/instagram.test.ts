@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { getProfileUsername } from './more-posts'
+import { getProfileUsername } from './instagram'
 
 describe('getProfileUsername', () => {
   it('reads the name from a profile page of Instagram', () => {

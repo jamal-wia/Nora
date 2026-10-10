@@ -31,6 +31,15 @@ describe('Anonymous profile', () => {
   })
 })
 
+describe('deleting the Anonymous profile', () => {
+  it('turns the mode off with it', () => {
+    settings$.setAnonymousMode(true)
+    settings$.deleteProfile('anonymous')
+    expect(settings$.anonymousMode.get()).toBe(false)
+    expect(settings$.profiles.get().some((profile) => profile.id === 'anonymous')).toBe(false)
+  })
+})
+
 describe('anonymous mode per-site switch', () => {
   it('turns the mode off for a site and back on, covering subdomains', () => {
     settings$.setAnonymousHostDisabled('www.reddit.com', true)

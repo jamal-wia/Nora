@@ -21,7 +21,7 @@ export function isAdBlockingDisabledHere() {
  * whatever site is showing it. `ancestorOrigins` is readable cross-origin,
  * unlike `top.location`, and lists the outermost frame last.
  */
-export function pageHost() {
+function pageHost() {
   const { ancestorOrigins, hostname } = document.location
   const top = ancestorOrigins?.length ? ancestorOrigins[ancestorOrigins.length - 1] : ''
   if (top && top !== 'null') {

@@ -364,7 +364,7 @@ export const settings$: Observable<Store> = observable<Store>({
   siteZoom: {},
 
   disabledServicesArr: [],
-  enabledSearchProviderIds: ['url', 'duckduckgo', 'public-search', 'google'],
+  enabledSearchProviderIds: ['url', 'duckduckgo', 'google'],
   selectedSearchProviderId: 'url',
   selectedPublicSearchServiceId: DEFAULT_PUBLIC_SEARCH_SERVICE_ID,
   customSearchProviders: [],
@@ -506,6 +506,10 @@ export const settings$: Observable<Store> = observable<Store>({
     const profiles = settings$.profiles.get()
     const index = profiles.findIndex((p) => p?.id === id)
     if (index !== -1 && profiles[index] && !profiles[index].isDefault) {
+      if (id === ANONYMOUS_PROFILE_ID) {
+        // The mode only acts in this profile, and would bring it back on the next start.
+        settings$.anonymousMode.set(false)
+      }
       settings$.profiles.splice(index, 1)
       void import('@/lib/profile-data')
         .then(({ deleteProfileData }) => deleteProfileData(id))

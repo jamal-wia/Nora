@@ -12,7 +12,8 @@ import {
 const STORAGE_KEY = '__nora_posts_search'
 const MAX_PAGES = 3
 // A search that has been left half way is not carried on by whatever page of results comes next.
-const STATE_LIFETIME_MS = 60_000
+// Long enough for a person to pass a check in between.
+const STATE_LIFETIME_MS = 5 * 60_000
 
 interface SearchState {
   startedAt: number
@@ -68,6 +69,7 @@ export function initSearchResultsReporter(emit: (type: string, data: unknown) =>
   }
 
   let handled = false
+  let challengeReported = false
   const run = () => {
     // The app's word that the mode is on reaches a page that has only just opened after the page
     // has loaded, so this is tried again when it arrives, and acts once.
@@ -75,14 +77,26 @@ export function initSearchResultsReporter(emit: (type: string, data: unknown) =>
       return
     }
     const html = document.documentElement.outerHTML
-    if (isChallengePage(html) || !isResultsPage(html)) {
+    // The address of a search for a profile starts one, at the page it names; the pages after it have none to read.
+    const { href } = document.location
+    const started = getSearchPageUsername(href)
+    if (isChallengePage(html)) {
+      if (!challengeReported) {
+        challengeReported = true
+        // Kept across the check: the page it leads to may not carry the address the search was opened with.
+        if (started) {
+          writeState({ startedAt: Date.now(), username: started, page: 0, offset: getSearchPageOffset(href), results: [] })
+        }
+        // Told to the app, which brings this tab forward if it is a search of its own.
+        emit('search-challenge', {})
+      }
+      return
+    }
+    if (!isResultsPage(html)) {
       return
     }
     handled = true
 
-    // The address of a search for a profile starts one, at the page it names; the pages after it have none to read.
-    const { href } = document.location
-    const started = getSearchPageUsername(href)
     const state: SearchState | null = started
       ? { startedAt: Date.now(), username: started, page: 0, offset: getSearchPageOffset(href), results: [] }
       : readState()

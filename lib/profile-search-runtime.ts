@@ -38,7 +38,7 @@ const ports: ProfileSearchPorts = {
   closeTab: (tabId) => {
     const index = tabs$.tabs.get().findIndex((tab) => tab?.id === tabId)
     if (index !== -1) {
-      tabs$.closeTab(index)
+      tabs$.closeTab(index, { forget: true })
     }
   },
   tabExists: (tabId) => Boolean(findTab(tabId)),

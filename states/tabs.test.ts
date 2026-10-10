@@ -149,3 +149,26 @@ it('opens a tab in the background without switching to it', () => {
     tabs$.activeTabIndex.set(previousIndex)
   }
 })
+
+it('closes a tab the app opened for its own work without offering it for reopening', () => {
+  const previousTabs = tabs$.tabs.get()
+  const previousIndex = tabs$.activeTabIndex.get()
+  const previousClosed = tabs$.recentlyClosedTabs.get()
+  try {
+    tabs$.tabs.set([
+      { id: 'front', url: 'https://front.test' },
+      { id: 'work', url: 'https://work.test' },
+      { id: 'other', url: 'https://other.test' },
+    ])
+    tabs$.activeTabIndex.set(0)
+    tabs$.recentlyClosedTabs.set([])
+    tabs$.closeTab(1, { forget: true })
+    expect(tabs$.recentlyClosedTabs.get()).toEqual([])
+    tabs$.closeTab(1)
+    expect(tabs$.recentlyClosedTabs.get().map((tab) => tab.id)).toEqual(['other'])
+  } finally {
+    tabs$.tabs.set(previousTabs)
+    tabs$.activeTabIndex.set(previousIndex)
+    tabs$.recentlyClosedTabs.set(previousClosed)
+  }
+})

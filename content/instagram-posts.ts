@@ -1,4 +1,4 @@
-import { getProfileUsername } from './more-posts'
+import { INSTAGRAM_POST_KINDS, INSTAGRAM_USERNAME_PATTERN, getProfileUsername, isInstagramHost } from '../lib/instagram'
 
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
 // A media id is a number of up to 19 digits, which starts with the time it was made: the milliseconds
@@ -72,7 +72,7 @@ export function getPostUrl(src: string, now = Date.now()) {
   return code ? `https://www.instagram.com/p/${code}/` : null
 }
 
-const POST_PAGE = /^\/(?:[A-Za-z0-9._]{1,30}\/)?(p|reel|tv)\/([A-Za-z0-9_-]{5,})\/?$/
+const POST_PAGE = new RegExp(`^/(?:${INSTAGRAM_USERNAME_PATTERN}/)?(${INSTAGRAM_POST_KINDS.join('|')})/([A-Za-z0-9_-]{5,})/?$`)
 
 /**
  * Where a post's own page should be shown instead: its embed page. The page Instagram
@@ -81,7 +81,7 @@ const POST_PAGE = /^\/(?:[A-Za-z0-9._]{1,30}\/)?(p|reel|tv)\/([A-Za-z0-9_-]{5,})
  * for the embed page itself.
  */
 export function getEmbedUrlForPage(hostname: string, pathname: string) {
-  if (!/(^|\.)instagram\.com$/.test(hostname)) {
+  if (!isInstagramHost(hostname)) {
     return null
   }
   const match = pathname.match(POST_PAGE)
@@ -102,7 +102,7 @@ export const isProfileGridPage = (hostname: string, pathname: string) =>
  * the picture's address, so a tap opens it in this tab, as a tap on a link would.
  */
 export function initInstagramPostOpener() {
-  if (!/(^|\.)instagram\.com$/.test(document.location.hostname)) {
+  if (!isInstagramHost(document.location.hostname)) {
     return () => {}
   }
 

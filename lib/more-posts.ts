@@ -11,11 +11,7 @@ import {
 } from './public-posts'
 
 export interface MorePostCard {
-  url: string
   embedUrl: string
-  date: number | null
-  likes: string | null
-  comments: string | null
   caption: string
 }
 
@@ -79,30 +75,40 @@ export function getMorePostsPage(username: string, page: number, now = Date.now(
   if (!entry) {
     return { username, page, status: 'idle', posts: [], hasMore: false, searchUrl }
   }
+  // A list that is being read does not go stale under the person.
+  entry.at = now
 
   const start = Math.max(0, page) * POSTS_PER_PAGE
   const cards: MorePostCard[] = []
   for (const post of entry.posts.slice(start, start + POSTS_PER_PAGE)) {
     const embedUrl = toEmbedUrl(post)
     if (embedUrl) {
-      cards.push({ url: post.url, embedUrl, date: post.date, likes: post.likes, comments: post.comments, caption: post.caption })
+      cards.push({ embedUrl, caption: post.caption })
     }
   }
   return { username, page, status: 'ok', posts: cards, hasMore: start + POSTS_PER_PAGE < entry.posts.length || entry.next !== null, searchUrl }
 }
 
 /** What the search found for a profile, read in the same way for any way of getting it. */
-export function storeSearchResults(username: string, results: SearchResult[], next: SearchContinuation | null = null, now = Date.now()) {
+export function storeSearchResults(
+  username: string,
+  results: SearchResult[],
+  next: SearchContinuation | null = null,
+  now = Date.now(),
+  shownShortcodes: string[] = [],
+) {
   const posts = results.map((result) => toInstagramPost(result, username)).filter((post): post is PublicPost => post !== null)
-  // The newest are the ones the profile already shows, whose codes the page does not give.
-  const sorted = continuePosts(posts, [])
-  const shown = sorted.slice(0, POSTS_SHOWN_WITHOUT_LOGIN)
-  const dates = shown.map((post) => post.date).filter((date): date is number => date !== null)
+  // The posts the profile shows itself are left out by their codes, which the page reads off its grid.
+  const shown = new Set(shownShortcodes)
+  const sorted = continuePosts(posts, shown)
+  // Tiles the page could not read are taken to be as many of the newest that are left.
+  const assumed = sorted.slice(0, Math.max(0, POSTS_SHOWN_WITHOUT_LOGIN - shown.size))
+  const dates = assumed.map((post) => post.date).filter((date): date is number => date !== null)
   cache.set(username.toLowerCase(), {
     at: now,
-    posts: sorted.slice(POSTS_SHOWN_WITHOUT_LOGIN),
+    posts: sorted.slice(assumed.length),
     next,
-    skipped: new Set(shown.map((post) => post.shortcode)),
+    skipped: new Set([...shown, ...assumed.map((post) => post.shortcode)]),
     cutoff: dates.length ? Math.min(...dates) : null,
     batches: 1,
   })

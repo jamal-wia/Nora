@@ -11,7 +11,6 @@ export interface CustomSearchProvider extends SearchProviderInput {
 export type BuiltinSearchProviderId =
   | 'url'
   | 'duckduckgo'
-  | 'public-search'
   | 'google'
   | 'bluesky'
   | 'facebook'
@@ -25,12 +24,12 @@ export type BuiltinSearchProviderId =
   | 'vk'
   | 'x'
 
-export type SearchProviderKind = 'url' | 'public' | 'builtin' | 'custom'
+export type SearchProviderKind = 'url' | 'builtin' | 'custom'
 
 export interface BuiltinSearchProviderDefinition {
   id: BuiltinSearchProviderId
   name: string
-  kind: 'url' | 'public' | 'builtin'
+  kind: 'url' | 'builtin'
   templateUrl?: string
   serviceId?: string
 }
@@ -46,7 +45,7 @@ export interface ResolvedSearchProvider {
 
 const encodedPlaceholder = '__NORA_SEARCH_QUERY__'
 
-export const defaultEnabledSearchProviderIds = ['url', 'duckduckgo', 'public-search', 'google'] as const
+export const defaultEnabledSearchProviderIds = ['url', 'duckduckgo', 'google'] as const
 
 export const builtinSearchProviders: Record<BuiltinSearchProviderId, BuiltinSearchProviderDefinition> = {
   url: {
@@ -59,13 +58,6 @@ export const builtinSearchProviders: Record<BuiltinSearchProviderId, BuiltinSear
     name: 'DuckDuckGo',
     kind: 'builtin',
     templateUrl: 'https://duckduckgo.com/?q=%s',
-  },
-  // No template: the query is scoped to a service chosen next to the search box
-  // and built by `resolvePublicSearchUrl`.
-  'public-search': {
-    id: 'public-search',
-    name: 'Public posts',
-    kind: 'public',
   },
   google: {
     id: 'google',

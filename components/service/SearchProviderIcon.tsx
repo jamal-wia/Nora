@@ -22,10 +22,6 @@ export const SearchProviderIcon: React.FC<{
     return <SearchIcon name="language" size={size} color={isDark ? tw(colors.iconMutedDark) : tw(colors.iconLight)} />
   }
 
-  if (provider.kind === 'public') {
-    return <SearchIcon name="travel-explore" size={size} color={isDark ? tw(colors.iconMutedDark) : tw(colors.iconLight)} />
-  }
-
   const faviconUrl =
     provider.id === 'duckduckgo'
       ? getFaviconUrl('https://duckduckgo.com/?q=%s')
